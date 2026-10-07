@@ -36,6 +36,7 @@ import {
 } from '../components/icons';
 import { useLiveTick } from '../lib/live';
 import RoomPicker from '../components/RoomPicker';
+import { useSimpleMode } from '../lib/mode';
 
 /** Staff a ticket of this department can be assigned to (technicians for maintenance, IT users for IT). */
 function staffFor(technicians: any[], department: string, keepId?: number | null) {
@@ -52,6 +53,7 @@ export default function PannesPage({ onOpenMenu, onNavigate }: { onOpenMenu: () 
   void onOpenMenu;
   void onNavigate;
   const user = useAuthStore((s) => s.user)!;
+  const simple = useSimpleMode();
   const { technicians, contractors, parts } = useLookups();
   const [rows, setRows] = useState<any[]>([]);
   const [scope, setScope] = useState('open');
@@ -229,6 +231,7 @@ export default function PannesPage({ onOpenMenu, onNavigate }: { onOpenMenu: () 
                 <span className="text-xs font-semibold text-ink-faint uppercase tracking-wide mr-1">Statut :</span>
                 {ALLOWED_TRANSITIONS[p.status as PanneStatus]
                   ?.filter((next) => next !== 'assigned' && canSetStatus(user.role, p.status, next))
+                  .filter((next) => !simple || RESPONSE_STATUSES.includes(next) || ['closed', 'cancelled', 'open'].includes(next))
                   .map((next) => (
                     <button
                       key={next}
@@ -254,13 +257,18 @@ export default function PannesPage({ onOpenMenu, onNavigate }: { onOpenMenu: () 
                   <span className="text-ink-soft">Technicien</span>
                   <span className="font-semibold">{p.assigned_to_name ?? '—'}</span>
                 </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-ink-soft">Prestataire externe</span>
-                  <span className="font-semibold">{p.contractor_name ?? '—'}</span>
-                </div>
+                {(!simple || p.contractor_name) && (
+                  <div className="flex justify-between py-1">
+                    <span className="text-ink-soft">Prestataire externe</span>
+                    <span className="font-semibold">{p.contractor_name ?? '—'}</span>
+                  </div>
+                )}
               </div>
             </Section>
 
+            {/* Mode complet only: the detailed repair record */}
+            {!simple && (
+            <>
             {hasPermission(user.role, 'panne.manage') && (
               <DiagnosisSection key={p.id} panne={p} onSaved={refreshDetail} show={show} userId={user.id} />
             )}
@@ -308,6 +316,8 @@ export default function PannesPage({ onOpenMenu, onNavigate }: { onOpenMenu: () 
             </Section>
 
             <CostsSection key={p.id} panne={p} onSaved={refreshDetail} show={show} userId={user.id} canEdit={hasPermission(user.role, 'panne.manage')} />
+            </>
+            )}
 
             <Section
               title={`Photos (${detail.photos.length})`}
@@ -575,6 +585,7 @@ function AssignModal({ panne, technicians, contractors, onClose, onSaved, show }
   const [assignedTo, setAssignedTo] = useState<string>(panne.assigned_to ?? '');
   const [contractorId, setContractorId] = useState<string>(panne.contractor_id ?? '');
   const [department, setDepartment] = useState<string>(panne.department ?? 'maintenance');
+  const simple = useSimpleMode();
   const staff = staffFor(technicians, department, panne.assigned_to);
   async function submit() {
     try {
@@ -606,13 +617,17 @@ function AssignModal({ panne, technicians, contractors, onClose, onSaved, show }
           <option key={t.id} value={t.id}>{t.full_name}</option>
         ))}
       </select>
-      <label className="label">Prestataire externe</label>
-      <select className="select" value={contractorId} onChange={(e) => setContractorId(e.target.value)}>
-        <option value="">— Aucun —</option>
-        {contractors.map((c: any) => (
-          <option key={c.id} value={c.id}>{c.company}</option>
-        ))}
-      </select>
+      {(!simple || contractorId) && (
+        <>
+          <label className="label">Prestataire externe</label>
+          <select className="select" value={contractorId} onChange={(e) => setContractorId(e.target.value)}>
+            <option value="">— Aucun —</option>
+            {contractors.map((c: any) => (
+              <option key={c.id} value={c.id}>{c.company}</option>
+            ))}
+          </select>
+        </>
+      )}
     </Modal>
   );
 }
@@ -735,6 +750,7 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
   const [department, setDepartment] = useState<Department>('maintenance');
   const [assignedTo, setAssignedTo] = useState('');
   const [busy, setBusy] = useState(false);
+  const simple = useSimpleMode();
 
   // optional details, with the defaults a quick report gets
   const [showMore, setShowMore] = useState(false);
@@ -936,7 +952,7 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
                 {Object.entries(REPORTER_ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
-            {locationEquipment.length > 0 && (
+            {!simple && locationEquipment.length > 0 && (
               <div>
                 <label className="label">Équipement concerné</label>
                 <select className="select" value={more.equipment_id} onChange={(e) => setM('equipment_id', e.target.value)}>
@@ -945,13 +961,13 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
                 </select>
               </div>
             )}
-            <div>
+            {!simple && <div>
               <label className="label">Prestataire externe</label>
               <select className="select" value={more.contractor_id} onChange={(e) => setM('contractor_id', e.target.value)}>
                 <option value="">— Aucun —</option>
                 {contractors.map((c: any) => <option key={c.id} value={c.id}>{c.company}</option>)}
               </select>
-            </div>
+            </div>}
           </div>
         </div>
       )}

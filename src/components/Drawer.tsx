@@ -13,6 +13,7 @@ import {
   IconX,
 } from './icons';
 import { hasPermission } from '../../shared/types';
+import { useSimpleMode } from '../lib/mode';
 import type { UserRole } from '../../shared/types';
 
 export type View =
@@ -29,6 +30,9 @@ export type View =
   | 'settings';
 
 type Perm = Parameters<typeof hasPermission>[1];
+
+/** Pages only shown in "Mode complet". */
+export const ADVANCED_VIEWS: View[] = ['equipment', 'maintenance', 'inventory', 'contractors', 'reports', 'audit'];
 
 const GROUPS: { title: string; items: { key: View; label: string; icon: (p: any) => JSX.Element; perm?: Perm }[] }[] = [
   {
@@ -78,6 +82,7 @@ export default function Drawer({
   onSelect: (v: View) => void;
   onClose: () => void;
 }) {
+  const simple = useSimpleMode();
   return (
     <div className="fixed inset-0 z-40 flex">
       <button aria-label="Fermer" onClick={onClose} className="flex-1 bg-overlay/45 backdrop-blur-[1px]" />
@@ -90,7 +95,7 @@ export default function Drawer({
         </div>
         <div className="flex-1 overflow-y-auto scrollbar-thin py-3 px-3">
           {GROUPS.map((group) => {
-            const visible = group.items.filter((i) => !i.perm || hasPermission(role, i.perm));
+            const visible = group.items.filter((i) => (!i.perm || hasPermission(role, i.perm)) && !(simple && ADVANCED_VIEWS.includes(i.key)));
             if (visible.length === 0) return null;
             return (
               <div key={group.title} className="mb-4">

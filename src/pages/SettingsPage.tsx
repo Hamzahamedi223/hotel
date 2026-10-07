@@ -27,6 +27,7 @@ export default function SettingsPage() {
 
   async function saveSetting(key: string, value: string) {
     await window.api.settings.set(user.id, key, value);
+    setSettings((s) => ({ ...s, [key]: value }));
     show('Enregistré.', 'success');
     refreshLookups();
   }
@@ -56,6 +57,24 @@ export default function SettingsPage() {
           {COMPANY_FIELDS.map(([label, key]) => (
             <SettingRow key={key} label={label} value={settings[key] ?? ''} onSave={(v) => saveSetting(key, v)} />
           ))}
+        </Panel>
+
+        <Panel title="Affichage">
+          <p className="text-sm text-ink-soft mb-3">
+            <b>Mode simple</b> : signaler un problème, l'équipe répond. <b>Mode complet</b> : ajoute équipements, maintenance préventive, stock,
+            prestataires, rapports, journal d'audit, et diagnostic / pièces / coûts dans les tickets. Les données sont conservées dans les deux cas.
+          </p>
+          <div className="flex gap-1 bg-surface-alt rounded-lg p-1">
+            {([['simple', 'Mode simple'], ['full', 'Mode complet']] as const).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => saveSetting('ui_mode', k)}
+                className={`flex-1 text-sm font-semibold py-2 rounded-md ${(settings.ui_mode === 'full' ? 'full' : 'simple') === k ? 'bg-surface shadow-xs' : 'text-ink-soft'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </Panel>
 
         <Panel title="Sauvegarde & restauration">

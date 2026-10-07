@@ -14,9 +14,11 @@ import {
   IconRefresh,
 } from '../components/icons';
 import { useLiveTick } from '../lib/live';
+import { useSimpleMode } from '../lib/mode';
 
 export default function DashboardPage({ onNavigate }: { onNavigate: (v: View) => void }) {
   const tick = useLiveTick();
+  const simple = useSimpleMode();
   const [data, setData] = useState<any>(null);
 
   const load = () => window.api.dashboard.summary().then(setData);
@@ -84,7 +86,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (v: View) =>
           ))}
         </section>
 
-        <section className="card p-4">
+        {!simple && <section className="card p-4">
           <h2 className="font-bold text-sm mb-3 flex items-center gap-2 text-amber-700 dark:text-amber-400">
             <IconCalendar size={15} /> Maintenance à venir ({data.dueSoonMaintenance.length})
           </h2>
@@ -99,9 +101,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (v: View) =>
           {data.overdueMaintenance > 0 && (
             <p className="text-xs text-red-600 dark:text-red-400 mt-2">{data.overdueMaintenance} échéance(s) en retard.</p>
           )}
-        </section>
+        </section>}
 
-        <section className="card p-4 lg:col-span-2">
+        <section className={`card p-4 ${simple ? 'lg:col-span-3' : 'lg:col-span-2'}`}>
           <h2 className="font-bold text-sm mb-3 flex items-center gap-2 text-red-700 dark:text-red-400">
             <IconAlertTriangle size={15} /> Pannes récurrentes (90 j)
           </h2>

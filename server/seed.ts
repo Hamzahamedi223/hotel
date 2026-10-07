@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   company_email: '',
   currency: 'TND',
   low_stock_alert: '1',
+  ui_mode: 'simple', // 'full' shows equipment, stock, reports… (Réglages)
 };
 
 export async function seedCoreData() {

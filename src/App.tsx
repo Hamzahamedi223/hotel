@@ -13,7 +13,8 @@ import ReportsPage from './pages/ReportsPage';
 import UsersPage from './pages/UsersPage';
 import AuditLogPage from './pages/AuditLogPage';
 import SettingsPage from './pages/SettingsPage';
-import Drawer, { type View } from './components/Drawer';
+import Drawer, { ADVANCED_VIEWS, type View } from './components/Drawer';
+import { useSimpleMode } from './lib/mode';
 import { IconClipboardList, IconMenu, IconSun, IconMoon, IconLogOut, IconArrowLeft, IconLayoutDashboard, IconWrench } from './components/icons';
 import { applyTheme, getPreferredTheme, type Theme } from './lib/theme';
 import { startLiveSync, stopLiveSync, useLiveTick } from './lib/live';
@@ -48,6 +49,11 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(() => getPreferredTheme());
 
   const tick = useLiveTick();
+  const simple = useSimpleMode();
+  // an admin switched to Mode simple while someone was on a hidden page
+  useEffect(() => {
+    if (simple && ADVANCED_VIEWS.includes(view)) setView('pannes');
+  }, [simple, view]);
   useEffect(() => {
     if (user) refreshLookups();
     else setView('pannes');
