@@ -1,5 +1,4 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { dispatch, RpcError } from '../server/rpc';
 
 /**
  * POST /api/rpc  { method: "pannes:list", args: [...] }
@@ -16,6 +15,17 @@ export default async function handler(req: IncomingMessage & { body?: any }, res
     res.end(JSON.stringify(payload));
   };
   if (req.method !== 'POST') return send(405, { error: 'POST only' });
+
+  // Loaded lazily so a startup failure (bad setting, missing module) comes back
+  // as a readable message instead of Vercel's bare FUNCTION_INVOCATION_FAILED.
+  let server: typeof import('../server/rpc');
+  try {
+    server = await import('../server/rpc');
+  } catch (err: any) {
+    console.error('API failed to start:', err);
+    return send(500, { error: `Le serveur n'a pas pu démarrer : ${err?.message ?? err}` });
+  }
+  const { dispatch, RpcError } = server;
 
   try {
     const body = req.body ?? (await readJson(req));
