@@ -20,7 +20,6 @@ import {
   RESPONSE_LABELS,
   hasPermission,
   canSetStatus,
-  departmentForCategory,
 } from '../../shared/types';
 import type { PanneStatus, PanneCategory, PannePriority, GuestImpact, Department, UserRole } from '../../shared/types';
 import {
@@ -32,6 +31,8 @@ import {
   IconCamera,
   IconTrash,
   IconAlertTriangle,
+  IconX,
+  IconChevronDown,
 } from '../components/icons';
 import { useLiveTick } from '../lib/live';
 import RoomPicker from '../components/RoomPicker';
@@ -717,191 +718,244 @@ function PartForm({ panneId, parts, onClose, onSaved, show }: any) {
   );
 }
 
+
+/**
+ * New ticket, kept to what floor staff actually know: what's wrong, where,
+ * a photo, and which team (or person) should handle it. Everything else is
+ * folded under "Plus de détails" with sensible defaults.
+ */
 function NewPanneForm({ onClose, onSaved, show }: any) {
   const user = useAuthStore((s) => s.user)!;
   const { buildings, rooms, areas, equipment, technicians, contractors } = useLookups();
-  const [f, setF] = useState<any>({
-    title: '',
-    description: '',
-    category: 'other',
-    priority: 'medium',
-    guest_impact: 'none',
-    location_type: 'room',
-    room_id: '', // must be picked: a default room would silently mislabel tickets
-    area_id: areas[0]?.id ?? '',
-    building_id: buildings[0]?.id ?? '',
-    equipment_id: '',
-    // default to the logged-in person's own department
-    reported_by_role: ({ housekeeping: 'housekeeping', manager: 'manager' } as Record<string, string>)[user.role] ?? 'reception',
-    department: 'maintenance',
-    assigned_to: '',
-    contractor_id: '',
-  });
-  // the team follows the category ("Wi-Fi" → IT) until the reporter picks one themselves
-  const [departmentTouched, setDepartmentTouched] = useState(false);
-  const set = (k: string, v: any) =>
-    setF((x: any) => {
-      const next = { ...x, [k]: v };
-      if (k === 'category' && !departmentTouched) next.department = departmentForCategory(v);
-      if (k === 'category' || k === 'department') {
-        // an assignee from the other team would be hidden from the list below
-        if (next.department !== x.department) next.assigned_to = '';
-      }
-      return next;
-    });
-  const staff = staffFor(technicians, f.department);
+  const [description, setDescription] = useState('');
+  const [where, setWhere] = useState<'room' | 'other'>('room');
+  const [roomId, setRoomId] = useState(''); // must be picked: a default room would silently mislabel tickets
+  const [place, setPlace] = useState(areas[0] ? `area:${areas[0].id}` : buildings[0] ? `building:${buildings[0].id}` : '');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [department, setDepartment] = useState<Department>('maintenance');
+  const [assignedTo, setAssignedTo] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // optional details, with the defaults a quick report gets
+  const [showMore, setShowMore] = useState(false);
+  const [more, setMore] = useState({
+    title: '',
+    category: '',
+    priority: 'medium',
+    guest_impact: 'none',
+    equipment_id: '',
+    reported_by_role: ({ housekeeping: 'housekeeping', manager: 'manager', admin: 'administration' } as Record<string, string>)[user.role] ?? 'reception',
+    contractor_id: '',
+  });
+  const setM = (k: string, v: string) => setMore((x) => ({ ...x, [k]: v }));
+
+  const [placeKind, placeId] = place.split(':');
+  const location_type: 'room' | 'area' | 'building' = where === 'room' ? 'room' : placeKind === 'building' ? 'building' : 'area';
+  const staff = staffFor(technicians, department);
   const locationEquipment = equipment.filter((e: any) =>
-    f.location_type === 'room' ? String(e.room_id) === String(f.room_id) : f.location_type === 'area' ? String(e.area_id) === String(f.area_id) : false
+    location_type === 'room' ? String(e.room_id) === String(roomId) : location_type === 'area' ? String(e.area_id) === placeId : false
   );
 
+  function chooseDepartment(d: Department) {
+    setDepartment(d);
+    setAssignedTo(''); // a person from the other team wouldn't be in the list
+  }
+
+  async function addPhoto() {
+    try {
+      const dataUrl = await window.api.photos.pick(user.id);
+      if (dataUrl) setPhotos((p) => [...p, dataUrl]);
+    } catch (e: any) {
+      show(e.message ?? 'Photo illisible.', 'error');
+    }
+  }
+
   async function submit() {
-    if (!f.title) return show('Le titre est requis.', 'error');
-    if (f.location_type === 'room' && !f.room_id) return show('Choisissez la chambre.', 'error');
+    const text = description.trim();
+    if (!text) return show("Écrivez ce qui ne marche pas.", 'error');
+    if (where === 'room' && !roomId) return show('Choisissez la chambre.', 'error');
+    if (where === 'other' && !place) return show("Choisissez l'endroit.", 'error');
     setBusy(true);
     try {
+      const firstLine = text.split('\n')[0].trim();
+      const title = more.title.trim() || (firstLine.length > 80 ? firstLine.slice(0, 77) + '…' : firstLine);
       const result = await window.api.pannes.create(user.id, {
-        title: f.title,
-        description: f.description || null,
-        category: f.category,
-        priority: f.priority,
-        guest_impact: f.guest_impact,
-        location_type: f.location_type,
-        room_id: f.location_type === 'room' && f.room_id ? Number(f.room_id) : null,
-        area_id: f.location_type === 'area' && f.area_id ? Number(f.area_id) : null,
-        building_id: f.location_type === 'building' && f.building_id ? Number(f.building_id) : null,
-        equipment_id: f.equipment_id ? Number(f.equipment_id) : null,
-        reported_by_role: f.reported_by_role,
-        department: f.department,
-        assigned_to: f.assigned_to ? Number(f.assigned_to) : null,
-        contractor_id: f.contractor_id ? Number(f.contractor_id) : null,
+        title,
+        description: text,
+        category: more.category || 'other',
+        priority: more.priority,
+        guest_impact: more.guest_impact,
+        location_type,
+        room_id: location_type === 'room' ? Number(roomId) : null,
+        area_id: location_type === 'area' ? Number(placeId) : null,
+        building_id: location_type === 'building' ? Number(placeId) : null,
+        equipment_id: more.equipment_id ? Number(more.equipment_id) : null,
+        reported_by_role: more.reported_by_role,
+        department,
+        assigned_to: assignedTo ? Number(assignedTo) : null,
+        contractor_id: more.contractor_id ? Number(more.contractor_id) : null,
       });
-      onSaved(result.panne.id);
+      const id = result.panne.id;
+      // the ticket exists now; a failed photo shouldn't lose it
+      let failed = 0;
+      for (const file_path of photos) {
+        try {
+          await window.api.pannes.addPhoto(user.id, { panne_id: id, file_path, stage: 'before' });
+        } catch {
+          failed++;
+        }
+      }
+      if (failed) show(`Ticket créé, mais ${failed} photo(s) n'ont pas pu être envoyée(s).`, 'error');
+      onSaved(id);
     } catch (e: any) {
       show(e.message ?? 'Erreur', 'error');
       setBusy(false);
     }
   }
 
+  const choice = (active: boolean) =>
+    `flex-1 rounded-xl border-2 px-3 py-3 text-sm font-bold transition-colors ${active ? 'border-brand-600 bg-brand-600/10 text-brand-700 dark:text-brand-300' : 'border-line text-ink-soft'}`;
+
   return (
     <Modal
-      title="Nouveau ticket"
+      title="Signaler un problème"
       onClose={onClose}
-      width="w-[640px]"
+      width="w-[560px]"
       footer={
         <div className="flex gap-2">
           <button onClick={onClose} className="btn-secondary btn-md flex-1">Annuler</button>
-          <button disabled={busy} onClick={submit} className="btn-primary btn-md flex-1">Créer le ticket</button>
+          <button disabled={busy} onClick={submit} className="btn-primary btn-md flex-1">
+            {busy ? 'Envoi…' : 'Envoyer'}
+          </button>
         </div>
       }
     >
-      <label className="label">Titre</label>
-      <input className="input mb-3" value={f.title} onChange={(e) => set('title', e.target.value)} placeholder="Ex : Climatiseur ne refroidit pas" />
+      <label className="label">1. Qu'est-ce qui ne marche pas ?</label>
+      <textarea
+        className="input mb-4 text-base"
+        rows={3}
+        autoFocus
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Ex : La lampe de la salle de bain ne s'allume pas"
+      />
 
-      <label className="label">Description</label>
-      <textarea className="input mb-3" rows={2} value={f.description} onChange={(e) => set('description', e.target.value)} />
-
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
-        <div>
-          <label className="label">Catégorie</label>
-          <select className="select" value={f.category} onChange={(e) => set('category', e.target.value)}>
-            {Object.entries(PANNE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label">Priorité</label>
-          <select className="select" value={f.priority} onChange={(e) => set('priority', e.target.value)}>
-            {Object.entries(PANNE_PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label">Impact client</label>
-          <select className="select" value={f.guest_impact} onChange={(e) => set('guest_impact', e.target.value)}>
-            {Object.entries(GUEST_IMPACT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </div>
+      <label className="label">2. Où ?</label>
+      <div className="flex gap-2 mb-2">
+        <button type="button" onClick={() => setWhere('room')} className={choice(where === 'room')}>Chambre</button>
+        <button type="button" onClick={() => setWhere('other')} className={choice(where === 'other')}>Autre endroit</button>
       </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
-        <div>
-          <label className="label">Emplacement</label>
-          <select className="select" value={f.location_type} onChange={(e) => set('location_type', e.target.value)}>
-            <option value="room">Chambre</option>
-            <option value="area">Zone commune</option>
-            <option value="building">Bâtiment</option>
+      <div className="mb-4">
+        {where === 'room' ? (
+          <RoomPicker rooms={rooms} value={roomId} onChange={setRoomId} />
+        ) : (
+          <select className="select" value={place} onChange={(e) => setPlace(e.target.value)}>
+            {areas.length > 0 && (
+              <optgroup label="Zones">
+                {areas.map((a: any) => <option key={a.id} value={`area:${a.id}`}>{a.name}{a.building_name ? ` — ${a.building_name}` : ''}</option>)}
+              </optgroup>
+            )}
+            {buildings.length > 0 && (
+              <optgroup label="Bâtiment entier">
+                {buildings.map((b: any) => <option key={b.id} value={`building:${b.id}`}>{b.name}</option>)}
+              </optgroup>
+            )}
           </select>
-        </div>
-        {f.location_type === 'room' && (
-          <div className="col-span-2">
-            <label className="label">Chambre</label>
-            <RoomPicker rooms={rooms} value={f.room_id} onChange={(id) => set('room_id', id)} />
-          </div>
-        )}
-        {f.location_type === 'area' && (
-          <div className="col-span-2">
-            <label className="label">Zone</label>
-            <select className="select" value={f.area_id} onChange={(e) => set('area_id', e.target.value)}>
-              {areas.map((a: any) => <option key={a.id} value={a.id}>{a.name}{a.building_name ? ` — ${a.building_name}` : ''}</option>)}
-            </select>
-          </div>
-        )}
-        {f.location_type === 'building' && (
-          <div className="col-span-2">
-            <label className="label">Bâtiment</label>
-            <select className="select" value={f.building_id} onChange={(e) => set('building_id', e.target.value)}>
-              {buildings.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          </div>
         )}
       </div>
 
-      {locationEquipment.length > 0 && (
-        <div className="mb-3">
-          <label className="label">Équipement concerné (optionnel)</label>
-          <select className="select" value={f.equipment_id} onChange={(e) => set('equipment_id', e.target.value)}>
-            <option value="">— Aucun —</option>
-            {locationEquipment.map((eq: any) => <option key={eq.id} value={eq.id}>{eq.name}</option>)}
-          </select>
+      <label className="label">3. Photo (facultatif)</label>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {photos.map((src, i) => (
+          <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-line bg-surface-alt">
+            <img src={src} alt="" className="w-full h-full object-cover" />
+            <button
+              type="button"
+              aria-label="Retirer la photo"
+              onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
+              className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
+            >
+              <IconX size={13} />
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={addPhoto}
+          className="w-20 h-20 rounded-lg border-2 border-dashed border-line-strong text-ink-soft flex flex-col items-center justify-center gap-1 text-xs font-semibold"
+        >
+          <IconCamera size={20} />
+          Photo
+        </button>
+      </div>
+
+      <label className="label">4. Pour qui ?</label>
+      <div className="flex gap-2 mb-2">
+        {(Object.keys(DEPARTMENT_LABELS) as Department[]).map((d) => (
+          <button key={d} type="button" onClick={() => chooseDepartment(d)} className={choice(department === d)}>
+            {d === 'it' ? 'Informatique' : DEPARTMENT_LABELS[d]}
+          </button>
+        ))}
+      </div>
+      <select className="select mb-4" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}>
+        <option value="">Toute l'équipe {department === 'it' ? 'informatique' : 'maintenance'}</option>
+        {staff.map((t: any) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+      </select>
+
+      <button type="button" onClick={() => setShowMore((v) => !v)} className="btn-ghost btn-sm !px-0 text-ink-soft">
+        <IconChevronDown size={15} className={showMore ? 'rotate-180 transition-transform' : 'transition-transform'} />
+        Plus de détails (facultatif)
+      </button>
+      {showMore && (
+        <div className="mt-2 pt-3 border-t border-line">
+          <label className="label">Titre</label>
+          <input className="input mb-3" value={more.title} onChange={(e) => setM('title', e.target.value)} placeholder="Par défaut : la première ligne de la description" />
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="label">Catégorie</label>
+              <select className="select" value={more.category} onChange={(e) => setM('category', e.target.value)}>
+                <option value="">— Non précisée —</option>
+                {Object.entries(PANNE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Priorité</label>
+              <select className="select" value={more.priority} onChange={(e) => setM('priority', e.target.value)}>
+                {Object.entries(PANNE_PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Impact client</label>
+              <select className="select" value={more.guest_impact} onChange={(e) => setM('guest_impact', e.target.value)}>
+                {Object.entries(GUEST_IMPACT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Signalé par</label>
+              <select className="select" value={more.reported_by_role} onChange={(e) => setM('reported_by_role', e.target.value)}>
+                {Object.entries(REPORTER_ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            {locationEquipment.length > 0 && (
+              <div>
+                <label className="label">Équipement concerné</label>
+                <select className="select" value={more.equipment_id} onChange={(e) => setM('equipment_id', e.target.value)}>
+                  <option value="">— Aucun —</option>
+                  {locationEquipment.map((eq: any) => <option key={eq.id} value={eq.id}>{eq.name}</option>)}
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="label">Prestataire externe</label>
+              <select className="select" value={more.contractor_id} onChange={(e) => setM('contractor_id', e.target.value)}>
+                <option value="">— Aucun —</option>
+                {contractors.map((c: any) => <option key={c.id} value={c.id}>{c.company}</option>)}
+              </select>
+            </div>
+          </div>
         </div>
       )}
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="label">Signalé par</label>
-          <select className="select" value={f.reported_by_role} onChange={(e) => set('reported_by_role', e.target.value)}>
-            {Object.entries(REPORTER_ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label">Service concerné</label>
-          <select
-            className="select"
-            value={f.department}
-            onChange={(e) => {
-              setDepartmentTouched(true);
-              set('department', e.target.value);
-            }}
-          >
-            {Object.entries(DEPARTMENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label">Assigner à</label>
-          <select className="select" value={f.assigned_to} onChange={(e) => set('assigned_to', e.target.value)}>
-            <option value="">— Plus tard —</option>
-            {staff.map((t: any) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label">Ou prestataire</label>
-          <select className="select" value={f.contractor_id} onChange={(e) => set('contractor_id', e.target.value)}>
-            <option value="">— Aucun —</option>
-            {contractors.map((c: any) => <option key={c.id} value={c.id}>{c.company}</option>)}
-          </select>
-        </div>
-      </div>
-      {f.priority === 'critical' && (
+      {more.priority === 'critical' && (
         <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 mt-3 bg-red-500/10 rounded-lg px-3 py-2">
           <IconAlertTriangle size={15} /> Priorité critique : la chambre concernée sera automatiquement mise hors service.
         </div>
