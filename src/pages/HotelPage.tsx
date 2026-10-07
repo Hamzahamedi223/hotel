@@ -6,6 +6,7 @@ import { useToast, ToastHost } from '../components/Toast';
 import { RoomStatusBadge } from '../components/badges';
 import { ROOM_STATUS_LABELS } from '../../shared/types';
 import { IconPlus, IconEdit, IconAlertTriangle } from '../components/icons';
+import { useLiveTick } from '../lib/live';
 
 type Tab = 'rooms' | 'buildings' | 'areas';
 
@@ -16,6 +17,7 @@ const AREA_TYPES: [string, string][] = [
 ];
 
 export default function HotelPage() {
+  const tick = useLiveTick();
   const user = useAuthStore((s) => s.user)!;
   const refreshLookups = useLookups((s) => s.refresh);
   const [tab, setTab] = useState<Tab>('rooms');
@@ -33,7 +35,7 @@ export default function HotelPage() {
   }, []);
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, tick]);
 
   async function refreshAll() {
     await load();

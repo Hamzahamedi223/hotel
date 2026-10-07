@@ -5,10 +5,12 @@ import Modal from '../components/Modal';
 import { useToast, ToastHost } from '../components/Toast';
 import { dateTime, money } from '../lib/format';
 import { IconPlus, IconAlertTriangle, IconEdit } from '../components/icons';
+import { useLiveTick } from '../lib/live';
 
 type Tab = 'parts' | 'movements' | 'suppliers' | 'orders';
 
 export default function InventoryPage() {
+  const tick = useLiveTick();
   const user = useAuthStore((s) => s.user)!;
   const refreshLookups = useLookups((s) => s.refresh);
   const [tab, setTab] = useState<Tab>('parts');
@@ -30,7 +32,7 @@ export default function InventoryPage() {
   }, []);
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, tick]);
 
   async function refreshAll() {
     await load();

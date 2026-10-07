@@ -97,6 +97,7 @@ interface HotelApi {
     auditLog(actorId: number, limit?: number): Promise<any[]>;
     dailyLog(date: string): Promise<any[]>;
   };
+  sync: { version(): Promise<number> };
   settings: { get(): Promise<Record<string, string>>; set(actorId: number, key: string, value: string): Promise<void> };
   /** create downloads a JSON file; restore asks for one (false if the user cancelled). */
   backup: { create(actorId: number): Promise<{ path: string }>; restore(actorId: number): Promise<boolean> };

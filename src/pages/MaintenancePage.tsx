@@ -5,12 +5,14 @@ import Modal from '../components/Modal';
 import { useToast, ToastHost } from '../components/Toast';
 import { dateOnly, dateTime } from '../lib/format';
 import { IconPlus, IconCalendar, IconCheck, IconEdit, IconTrash } from '../components/icons';
+import { useLiveTick } from '../lib/live';
 
 type Tab = 'upcoming' | 'overdue' | 'all';
 
 const FREQ_LABELS: Record<string, string> = { days: 'jour(s)', weeks: 'semaine(s)', months: 'mois' };
 
 export default function MaintenancePage() {
+  const tick = useLiveTick();
   const user = useAuthStore((s) => s.user)!;
   const { equipment, areas, buildings, technicians } = useLookups();
   const [tab, setTab] = useState<Tab>('upcoming');
@@ -25,7 +27,7 @@ export default function MaintenancePage() {
   }, [tab]);
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, tick]);
 
   const today = new Date().toISOString().slice(0, 10);
 

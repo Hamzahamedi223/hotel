@@ -471,6 +471,9 @@ export function registerHandlers() {
 
   /* ---------- SETTINGS / BACKUP ---------- */
   ipcMain.handle('settings:get', async () => await settingsMap());
+
+  /* ---------- LIVE REFRESH ---------- */
+  ipcMain.handle('sync:version', async () => (await get<{ version: number }>('SELECT version FROM app_state WHERE id = 1'))?.version ?? 0);
   ipcMain.handle('settings:set', async (_e, actorId: number, key: string, value: string) => {
     await requireRole(actorId, 'settings.manage');
     await run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [key, value]);

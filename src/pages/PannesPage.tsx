@@ -25,6 +25,7 @@ import {
   IconTrash,
   IconAlertTriangle,
 } from '../components/icons';
+import { useLiveTick } from '../lib/live';
 
 const NEXT_STATUSES: Record<PanneStatus, PanneStatus[]> = {
   open: ['diagnosis', 'cancelled'],
@@ -44,6 +45,7 @@ const SCOPES: { key: string; label: string }[] = [
 ];
 
 export default function PannesPage({ onOpenMenu, onNavigate }: { onOpenMenu: () => void; onNavigate: (v: any) => void }) {
+  const tick = useLiveTick();
   void onOpenMenu;
   void onNavigate;
   const user = useAuthStore((s) => s.user)!;
@@ -65,7 +67,12 @@ export default function PannesPage({ onOpenMenu, onNavigate }: { onOpenMenu: () 
   }, [scope, priority, query]);
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, tick]);
+  // keep the open ticket current too
+  useEffect(() => {
+    if (tick && selectedId) window.api.pannes.get(selectedId).then(setDetail).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick]);
 
   const selectPanne = useCallback(async (id: number) => {
     setSelectedId(id);
@@ -241,7 +248,7 @@ export default function PannesPage({ onOpenMenu, onNavigate }: { onOpenMenu: () 
             </Section>
 
             {hasPermission(user.role, 'panne.manage') && (
-              <DiagnosisSection panne={p} onSaved={refreshDetail} show={show} userId={user.id} />
+              <DiagnosisSection key={p.id} panne={p} onSaved={refreshDetail} show={show} userId={user.id} />
             )}
 
             <Section
@@ -286,7 +293,7 @@ export default function PannesPage({ onOpenMenu, onNavigate }: { onOpenMenu: () 
               {detail.parts.length === 0 && <p className="text-sm text-ink-faint">Aucune pièce.</p>}
             </Section>
 
-            <CostsSection panne={p} onSaved={refreshDetail} show={show} userId={user.id} canEdit={hasPermission(user.role, 'panne.manage')} />
+            <CostsSection key={p.id} panne={p} onSaved={refreshDetail} show={show} userId={user.id} canEdit={hasPermission(user.role, 'panne.manage')} />
 
             <Section
               title={`Photos (${detail.photos.length})`}
@@ -386,6 +393,11 @@ function Section({ title, action, children }: { title: string; action?: React.Re
 function DiagnosisSection({ panne, onSaved, show, userId }: any) {
   const [f, setF] = useState({ diagnosis: panne.diagnosis ?? '', cause: panne.cause ?? '', recommended_action: panne.recommended_action ?? '' });
   const [dirty, setDirty] = useState(false);
+  // take in changes saved from another device, unless this user is mid-edit
+  useEffect(() => {
+    if (!dirty) setF({ diagnosis: panne.diagnosis ?? '', cause: panne.cause ?? '', recommended_action: panne.recommended_action ?? '' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panne.diagnosis, panne.cause, panne.recommended_action]);
   const set = (k: string, v: string) => {
     setF((x) => ({ ...x, [k]: v }));
     setDirty(true);

@@ -13,14 +13,17 @@ import {
   IconCalendar,
   IconRefresh,
 } from '../components/icons';
+import { useLiveTick } from '../lib/live';
 
 export default function DashboardPage({ onNavigate }: { onNavigate: (v: View) => void }) {
+  const tick = useLiveTick();
   const [data, setData] = useState<any>(null);
 
   const load = () => window.api.dashboard.summary().then(setData);
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick]);
 
   if (!data) return <div className="p-6 text-sm text-ink-faint">Chargement…</div>;
 

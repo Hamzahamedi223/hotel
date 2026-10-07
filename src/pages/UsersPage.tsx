@@ -3,6 +3,7 @@ import { useAuthStore } from '../store/authStore';
 import Modal from '../components/Modal';
 import { useToast, ToastHost } from '../components/Toast';
 import { IconPlus } from '../components/icons';
+import { useLiveTick } from '../lib/live';
 
 const ROLES: [string, string][] = [
   ['admin', 'Administrateur'],
@@ -13,6 +14,7 @@ const ROLES: [string, string][] = [
 ];
 
 export default function UsersPage() {
+  const tick = useLiveTick();
   const me = useAuthStore((s) => s.user)!;
   const [rows, setRows] = useState<any[]>([]);
   const [showNew, setShowNew] = useState(false);
@@ -24,7 +26,8 @@ export default function UsersPage() {
   const load = () => window.api.users.list().then(setRows);
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick]);
 
   async function create() {
     if (!form.username || !form.password || !form.full_name) return show('Tous les champs sont requis.', 'error');

@@ -4,8 +4,10 @@ import { useLookups } from '../store/lookupsStore';
 import Modal from '../components/Modal';
 import { useToast, ToastHost } from '../components/Toast';
 import { IconPlus, IconEdit } from '../components/icons';
+import { useLiveTick } from '../lib/live';
 
 export default function ContractorsPage() {
+  const tick = useLiveTick();
   const user = useAuthStore((s) => s.user)!;
   const refreshLookups = useLookups((s) => s.refresh);
   const [rows, setRows] = useState<any[]>([]);
@@ -16,7 +18,7 @@ export default function ContractorsPage() {
   const load = useCallback(() => window.api.contractors.list().then(setRows), []);
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, tick]);
 
   return (
     <div className="h-full p-4 md:p-6 overflow-y-auto scrollbar-thin">

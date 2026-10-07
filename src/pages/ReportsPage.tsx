@@ -7,6 +7,7 @@ import { money, dateTime } from '../lib/format';
 import { buildDailyLogHtml } from '../lib/print';
 import { PANNE_CATEGORY_LABELS } from '../../shared/types';
 import { IconPrinter, IconPlus } from '../components/icons';
+import { useLiveTick } from '../lib/live';
 
 type Tab = 'frequency' | 'rooms' | 'equipment' | 'costs' | 'technicians' | 'daily';
 
@@ -26,6 +27,7 @@ function defaultFrom() {
 }
 
 export default function ReportsPage() {
+  const tick = useLiveTick();
   const user = useAuthStore((s) => s.user)!;
   const [tab, setTab] = useState<Tab>('frequency');
   const [from, setFrom] = useState(defaultFrom());
@@ -51,14 +53,14 @@ export default function ReportsPage() {
     if (tab === 'costs') window.api.reports.costs(user.id, fromIso, toIso).then(setCosts);
     if (tab === 'technicians') window.api.reports.technicians(user.id, fromIso, toIso).then(setTechnicians);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, from, to]);
+  }, [tab, from, to, tick]);
 
   useEffect(() => {
     if (tab === 'daily') {
       window.api.reports.dailyLog(date).then(setDailyRows);
       window.api.handovers.list(10).then(setHandovers);
     }
-  }, [tab, date]);
+  }, [tab, date, tick]);
 
   async function printDaily() {
     const settings = useLookups.getState().settings;

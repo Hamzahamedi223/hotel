@@ -324,4 +324,28 @@ ALTER TABLE maintenance_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE maintenance_completions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shift_handovers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- Live refresh: one counter bumped by any write to a data table. Screens poll
+-- it (sync:version) and reload only when it moved. audit_logs is left out so
+-- a login alone doesn't make every screen reload.
+CREATE TABLE IF NOT EXISTS app_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  version BIGINT NOT NULL DEFAULT 0
+);
+INSERT INTO app_state (id, version) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
+ALTER TABLE app_state ENABLE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION bump_app_version() RETURNS trigger LANGUAGE plpgsql AS
+  $$ BEGIN UPDATE app_state SET version = version + 1 WHERE id = 1; RETURN NULL; END $$;
+
+DO $$
+DECLARE t TEXT;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['users','settings','buildings','rooms','areas','equipment','contractors','suppliers',
+    'inventory_parts','purchase_orders','purchase_order_lines','pannes','panne_interventions','panne_parts',
+    'panne_photos','inventory_movements','maintenance_schedules','maintenance_completions','shift_handovers']
+  LOOP
+    EXECUTE format('CREATE OR REPLACE TRIGGER bump_app_version AFTER INSERT OR UPDATE OR DELETE OR TRUNCATE ON %I FOR EACH STATEMENT EXECUTE FUNCTION bump_app_version()', t);
+  END LOOP;
+END $$;
 `;

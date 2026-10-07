@@ -7,8 +7,10 @@ import { EquipmentStatusBadge, PanneStatusBadge } from '../components/badges';
 import { dateOnly, dateTime, daysBadge, money } from '../lib/format';
 import { EQUIPMENT_CATEGORY_LABELS, EQUIPMENT_STATUS_LABELS } from '../../shared/types';
 import { IconSearch, IconPlus, IconWrench, IconArrowLeft } from '../components/icons';
+import { useLiveTick } from '../lib/live';
 
 export default function EquipmentPage() {
+  const tick = useLiveTick();
   const user = useAuthStore((s) => s.user)!;
   const { buildings, rooms, areas, refresh: refreshLookups } = useLookups();
   const [rows, setRows] = useState<any[]>([]);
@@ -25,7 +27,13 @@ export default function EquipmentPage() {
   }, [query, statusFilter]);
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, tick]);
+  useEffect(() => {
+    if (!tick || !selected) return;
+    window.api.equipment.get(selected.id).then((fresh) => fresh && setSelected(fresh)).catch(() => {});
+    window.api.equipment.history(selected.id).then(setHistory).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick]);
 
   const select = useCallback(async (e: any) => {
     setSelected(e);

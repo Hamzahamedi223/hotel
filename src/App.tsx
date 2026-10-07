@@ -16,6 +16,7 @@ import SettingsPage from './pages/SettingsPage';
 import Drawer, { type View } from './components/Drawer';
 import { IconClipboardList, IconMenu, IconSun, IconMoon, IconLogOut, IconArrowLeft, IconLayoutDashboard, IconWrench } from './components/icons';
 import { applyTheme, getPreferredTheme, type Theme } from './lib/theme';
+import { startLiveSync, stopLiveSync, useLiveTick } from './lib/live';
 
 const TITLES: Record<View, string> = {
   dashboard: 'Tableau de bord',
@@ -45,10 +46,16 @@ export default function App() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => getPreferredTheme());
 
+  const tick = useLiveTick();
   useEffect(() => {
     if (user) refreshLookups();
     else setView('pannes');
-  }, [user, refreshLookups]);
+  }, [user, refreshLookups, tick]);
+  useEffect(() => {
+    if (!user) return;
+    startLiveSync();
+    return stopLiveSync;
+  }, [user]);
 
   useEffect(() => {
     if (!userMenuOpen) return;

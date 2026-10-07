@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { dateTime } from '../lib/format';
+import { useLiveTick } from '../lib/live';
 
 export default function AuditLogPage() {
+  const tick = useLiveTick();
   const user = useAuthStore((s) => s.user)!;
   const [rows, setRows] = useState<any[]>([]);
   const [filter, setFilter] = useState('');
 
   useEffect(() => {
     window.api.reports.auditLog(user.id, 400).then(setRows);
-  }, [user.id]);
+  }, [user.id, tick]);
 
   const shown = filter ? rows.filter((r) => r.action.includes(filter) || (r.user_name ?? '').toLowerCase().includes(filter.toLowerCase())) : rows;
 

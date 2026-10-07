@@ -15,8 +15,11 @@ function devApi(): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
-  // Make DATABASE_URL etc. from .env visible to the dev API
-  Object.assign(process.env, loadEnv(mode, process.cwd(), ''));
+  // Make DATABASE_URL etc. from .env visible to the dev API. Variables already
+  // set in the shell win, so `DATABASE_URL= npm run dev` uses the local database.
+  for (const [k, v] of Object.entries(loadEnv(mode, process.cwd(), ''))) {
+    if (!(k in process.env)) process.env[k] = v;
+  }
   return {
     plugins: [react(), devApi()],
     build: {
