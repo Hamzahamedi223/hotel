@@ -1,4 +1,4 @@
-import { all, run } from './db';
+import { all, run } from './db.js';
 
 /** Parent tables before children, so a restore never violates a foreign key. */
 export const TABLE_ORDER = [

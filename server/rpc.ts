@@ -1,7 +1,7 @@
-import { ensureReady, get } from './db';
-import { initDatabase } from './seed';
-import { handlers, registerHandlers } from './handlers';
-import { issueToken, verifyToken } from './auth';
+import { ensureReady, get } from './db.js';
+import { initDatabase } from './seed.js';
+import { handlers, registerHandlers } from './handlers.js';
+import { issueToken, verifyToken } from './auth.js';
 
 registerHandlers();
 

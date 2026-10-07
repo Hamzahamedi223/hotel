@@ -18,9 +18,9 @@ export default async function handler(req: IncomingMessage & { body?: any }, res
 
   // Loaded lazily so a startup failure (bad setting, missing module) comes back
   // as a readable message instead of Vercel's bare FUNCTION_INVOCATION_FAILED.
-  let server: typeof import('../server/rpc');
+  let server: typeof import('../server/rpc.js');
   try {
-    server = await import('../server/rpc');
+    server = await import('../server/rpc.js');
   } catch (err: any) {
     console.error('API failed to start:', err);
     return send(500, { error: `Le serveur n'a pas pu démarrer : ${err?.message ?? err}` });

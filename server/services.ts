@@ -1,7 +1,7 @@
-import { all, get, run, transaction } from './db';
-import { round2, addToDate } from '../shared/calc';
-import { OPEN_PANNE_STATUSES } from '../shared/types';
-import type { PanneStatus } from '../shared/types';
+import { all, get, run, transaction } from './db.js';
+import { round2, addToDate } from '../shared/calc.js';
+import { OPEN_PANNE_STATUSES } from '../shared/types.js';
+import type { PanneStatus } from '../shared/types.js';
 
 /* ---------- shared helpers ------------------------------------------------ */
 

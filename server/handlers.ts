@@ -1,9 +1,9 @@
 import bcrypt from 'bcryptjs';
-import { all, get, run, transaction } from './db';
-import { exportAll, restoreAll } from './backup';
-import { storePhoto } from './photos';
-import { hasPermission, PERMISSIONS, OPEN_PANNE_STATUSES } from '../shared/types';
-import type { UserRole } from '../shared/types';
+import { all, get, run, transaction } from './db.js';
+import { exportAll, restoreAll } from './backup.js';
+import { storePhoto } from './photos.js';
+import { hasPermission, PERMISSIONS, OPEN_PANNE_STATUSES } from '../shared/types.js';
+import type { UserRole } from '../shared/types.js';
 import {
   audit,
   settingsMap,
@@ -35,7 +35,7 @@ import {
   reportTechnicianPerformance,
   reportResolutionTime,
   type PanneInput,
-} from './services';
+} from './services.js';
 
 type Perm = keyof typeof PERMISSIONS;
 

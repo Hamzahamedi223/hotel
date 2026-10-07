@@ -2,6 +2,7 @@
   "name": "hotel-panne-app",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Caisse Panne Hôtel — hotel maintenance & breakdown logbook (web app, Supabase)",
   "author": "Caisse Panne Hôtel",
   "scripts": {

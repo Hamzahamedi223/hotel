@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import initSqlJs from 'sql.js';
-import { transaction } from './db';
-import { initDatabase } from './seed';
-import { restoreAll, TABLE_ORDER, type BackupFile } from './backup';
+import { transaction } from './db.js';
+import { initDatabase } from './seed.js';
+import { restoreAll, TABLE_ORDER, type BackupFile } from './backup.js';
 
 /**
  * One-time move of the desktop version's SQLite file into Postgres.

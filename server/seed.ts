@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
-import { run, get, all, transaction, exec } from './db';
-import SCHEMA from './schema';
+import { run, get, all, transaction, exec } from './db.js';
+import SCHEMA from './schema.js';
 
 const DEFAULT_SETTINGS: Record<string, string> = {
   company_name: 'Caisse Panne Hôtel',
