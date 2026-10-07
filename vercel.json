@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/rpc.ts": {
+      "maxDuration": 60
+    }
+  },
+  "regions": [
+    "dub1"
+  ]
+}
