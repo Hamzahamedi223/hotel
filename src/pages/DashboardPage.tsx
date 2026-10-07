@@ -28,7 +28,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (v: View) =>
   if (!data) return <div className="p-6 text-sm text-ink-faint">Chargement…</div>;
 
   const sm: Record<string, number> = data.statusMap;
-  const statusOrder = ['open', 'assigned', 'diagnosis', 'waiting_parts', 'in_repair', 'testing', 'resolved', 'closed'];
+  const statusOrder = ['open', 'assigned', 'diagnosis', 'waiting_parts', 'in_repair', 'testing', 'need_info', 'escalated', 'resolved', 'closed'];
 
   return (
     <div className="h-full p-4 md:p-6 overflow-y-auto scrollbar-thin">

@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import bcrypt from 'bcryptjs';
 import { run, get, all, transaction, exec } from './db.js';
 import SCHEMA from './schema.js';
@@ -20,6 +22,7 @@ export async function seedCoreData() {
         { username: 'reception', password: 'reception123', full_name: 'Réception', role: 'reception' },
         { username: 'housekeeping', password: 'housekeeping123', full_name: 'Housekeeping', role: 'housekeeping' },
         { username: 'technicien', password: 'technicien123', full_name: 'Karim — Technicien', role: 'technician' },
+        { username: 'informatique', password: 'informatique123', full_name: 'Service informatique', role: 'it' },
       ];
       for (const u of users) {
         await run('INSERT INTO users (username, password_hash, full_name, role) VALUES (?,?,?,?)', [
@@ -164,10 +167,11 @@ async function main() {
   console.log(process.env.DATABASE_URL ? 'Seeding DATABASE_URL' : 'Seeding local database (data/pglite)');
   await initDatabase();
   if (process.argv.includes('--demo')) await seedDemo();
-  console.log('Seed complete. Logins: admin/admin123 · manager/manager123 · reception/reception123 · housekeeping/housekeeping123 · technicien/technicien123');
+  console.log('Seed complete. Logins: admin/admin123 · manager/manager123 · reception/reception123 · housekeeping/housekeeping123 · technicien/technicien123 · informatique/informatique123');
 }
 
-if (typeof require !== 'undefined' && require.main === module) {
+// run only as a script (npm run seed), not when rpc.ts imports initDatabase
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   main()
     .then(() => process.exit(0))
     .catch((err) => {

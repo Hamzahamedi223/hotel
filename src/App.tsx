@@ -17,6 +17,7 @@ import Drawer, { type View } from './components/Drawer';
 import { IconClipboardList, IconMenu, IconSun, IconMoon, IconLogOut, IconArrowLeft, IconLayoutDashboard, IconWrench } from './components/icons';
 import { applyTheme, getPreferredTheme, type Theme } from './lib/theme';
 import { startLiveSync, stopLiveSync, useLiveTick } from './lib/live';
+import { ROLE_LABELS } from '../shared/types';
 
 const TITLES: Record<View, string> = {
   dashboard: 'Tableau de bord',
@@ -103,7 +104,7 @@ export default function App() {
               <div className="absolute bottom-full right-0 mb-2 md:mb-0 md:bottom-0 md:right-auto md:left-full md:ml-2 w-56 card p-1.5 z-50 shadow-float">
                 <div className="px-2.5 py-2 border-b border-line mb-1">
                   <div className="text-sm font-semibold truncate">{user.full_name}</div>
-                  <div className="text-xs text-ink-faint capitalize">{user.role}</div>
+                  <div className="text-xs text-ink-faint">{ROLE_LABELS[user.role] ?? user.role}</div>
                 </div>
                 <button onClick={logout} className="nav-item w-full !text-red-600 dark:!text-red-400 hover:!bg-red-500/10">
                   <IconLogOut size={16} /> Déconnexion

@@ -1,7 +1,7 @@
 import { all, get, run, transaction } from './db.js';
 import { round2, addToDate } from '../shared/calc.js';
-import { OPEN_PANNE_STATUSES } from '../shared/types.js';
-import type { PanneStatus } from '../shared/types.js';
+import { OPEN_PANNE_STATUSES, ALLOWED_TRANSITIONS, ROLE_DEPARTMENT, DEPARTMENT_LABELS, departmentForCategory, hasPermission } from '../shared/types.js';
+import type { PanneStatus, UserRole, Department } from '../shared/types.js';
 
 /* ---------- shared helpers ------------------------------------------------ */
 
@@ -26,6 +26,21 @@ async function nextNumber(prefix: string, table: string, column: string): Promis
   await run('SELECT pg_advisory_xact_lock(hashtext(?))', [table]);
   const count = (await get<{ c: number }>(`SELECT COUNT(*) as c FROM ${table} WHERE ${column} ILIKE ?`, [like]))!.c;
   return `${prefix}-${ymd}-${String(count + 1).padStart(4, '0')}`;
+}
+
+/* ---------- ticket visibility -------------------------------------------- */
+
+export interface Actor { id: number; role: UserRole }
+
+/**
+ * SQL condition (on alias `p`) limiting tickets to what the actor may see:
+ * everything for roles with panne.viewAll, otherwise their department's
+ * tickets plus any assigned to them. Mirrors canViewPanne in shared/types.
+ */
+export function panneScope(actor: Actor): { sql: string; params: any[] } {
+  if (hasPermission(actor.role, 'panne.viewAll')) return { sql: 'TRUE', params: [] };
+  const dept = ROLE_DEPARTMENT[actor.role];
+  return dept ? { sql: '(p.department = ? OR p.assigned_to = ?)', params: [dept, actor.id] } : { sql: 'p.assigned_to = ?', params: [actor.id] };
 }
 
 /* ---------- panne detail read ------------------------------------------- */
@@ -69,7 +84,12 @@ export async function panneDetail(id: number) {
     [id]
   );
   const photos = await all<any>('SELECT * FROM panne_photos WHERE panne_id = ? ORDER BY id', [id]);
-  return { panne, interventions, parts, photos };
+  const comments = await all<any>(
+    `SELECT c.*, u.full_name AS user_name, u.role AS user_role FROM panne_comments c LEFT JOIN users u ON u.id = c.user_id
+     WHERE c.panne_id = ? ORDER BY c.id`,
+    [id]
+  );
+  return { panne, interventions, parts, photos, comments };
 }
 
 /* ---------- room / equipment status side-effects ------------------------ */
@@ -123,6 +143,7 @@ export interface PanneInput {
   building_id?: number | null;
   equipment_id?: number | null;
   reported_by_role?: string | null;
+  department?: string | null;
   notes?: string | null;
   assigned_to?: number | null;
   contractor_id?: number | null;
@@ -133,52 +154,55 @@ export async function createPanne(input: PanneInput) {
   return transaction(async () => {
     const number = await nextNumber('PANNE', 'pannes', 'ticket_number');
     const status: PanneStatus = input.assigned_to || input.contractor_id ? 'assigned' : 'open';
+    const department = validDepartment(input.department) ?? departmentForCategory(input.category);
     const { lastInsertRowid: id } = await run(
       `INSERT INTO pannes
         (ticket_number, title, description, category, priority, guest_impact, location_type,
-         room_id, area_id, building_id, equipment_id, reported_by_user_id, reported_by_role,
+         room_id, area_id, building_id, equipment_id, reported_by_user_id, reported_by_role, department,
          status, assigned_to, contractor_id, notes, assigned_at)
-       VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, ?)`,
+       VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?, ?)`,
       [
         number, input.title, input.description ?? null, input.category, input.priority, input.guest_impact, input.location_type,
         input.room_id ?? null, input.area_id ?? null, input.building_id ?? null, input.equipment_id ?? null,
-        input.user_id, input.reported_by_role ?? null,
+        input.user_id, input.reported_by_role ?? null, department,
         status, input.assigned_to ?? null, input.contractor_id ?? null, input.notes ?? null,
         status === 'assigned' ? new Date().toISOString() : null,
       ]
     );
     if (input.room_id && shouldTakeRoomOutOfService(input)) await setRoomStatus(input.room_id, 'maintenance');
     if (input.equipment_id) await setEquipmentStatus(input.equipment_id, 'needs_repair');
-    await audit(input.user_id, 'panne.create', 'panne', id, { number, title: input.title, priority: input.priority });
+    await audit(input.user_id, 'panne.create', 'panne', id, { number, title: input.title, priority: input.priority, department });
     return await panneDetail(id);
   });
 }
 
-export async function assignPanne(id: number, input: { assigned_to?: number | null; contractor_id?: number | null }, actorId: number) {
+function validDepartment(d: unknown): Department | null {
+  return typeof d === 'string' && d in DEPARTMENT_LABELS ? (d as Department) : null;
+}
+
+export async function assignPanne(id: number, input: { assigned_to?: number | null; contractor_id?: number | null; department?: string | null }, actorId: number) {
   return transaction(async () => {
     const p = await get<any>('SELECT * FROM pannes WHERE id = ?', [id]);
     if (!p) throw new Error('Ticket introuvable.');
     if (['resolved', 'closed', 'cancelled'].includes(p.status)) throw new Error('Ce ticket est déjà terminé.');
-    const nextStatus = p.status === 'open' ? 'assigned' : p.status;
-    await run("UPDATE pannes SET assigned_to = ?, contractor_id = ?, status = ?, assigned_at = COALESCE(assigned_at, now_txt()), updated_at = now_txt() WHERE id = ?", [
-      input.assigned_to ?? null, input.contractor_id ?? null, nextStatus, id,
+    const nextStatus = p.status === 'open' && (input.assigned_to || input.contractor_id) ? 'assigned' : p.status;
+    const department: Department = validDepartment(input.department) ?? p.department;
+    await run("UPDATE pannes SET assigned_to = ?, contractor_id = ?, department = ?, status = ?, assigned_at = COALESCE(assigned_at, now_txt()), updated_at = now_txt() WHERE id = ?", [
+      input.assigned_to ?? null, input.contractor_id ?? null, department, nextStatus, id,
     ]);
-    await audit(actorId, 'panne.assign', 'panne', id, { number: p.ticket_number, assigned_to: input.assigned_to, contractor_id: input.contractor_id });
+    if (department !== p.department) {
+      await addPanneComment(id, actorId, `Ticket transféré au service ${DEPARTMENT_LABELS[department]}.`);
+    }
+    await audit(actorId, 'panne.assign', 'panne', id, { number: p.ticket_number, assigned_to: input.assigned_to, contractor_id: input.contractor_id, department });
     return await panneDetail(id);
   });
 }
 
-const ALLOWED_TRANSITIONS: Record<PanneStatus, PanneStatus[]> = {
-  open: ['assigned', 'diagnosis', 'cancelled'],
-  assigned: ['diagnosis', 'waiting_parts', 'in_repair', 'cancelled'],
-  diagnosis: ['waiting_parts', 'in_repair', 'cancelled'],
-  waiting_parts: ['diagnosis', 'in_repair', 'cancelled'],
-  in_repair: ['waiting_parts', 'testing', 'cancelled'],
-  testing: ['in_repair', 'resolved', 'cancelled'],
-  resolved: ['in_repair', 'closed'],
-  closed: ['open'],
-  cancelled: ['open'],
-};
+/** Adds a message to the ticket's thread (`status` when it records a status change). */
+export async function addPanneComment(panneId: number, userId: number, body: string | null, status: PanneStatus | null = null) {
+  await run('INSERT INTO panne_comments (panne_id, user_id, body, status) VALUES (?,?,?,?)', [panneId, userId, body, status]);
+  await run('UPDATE pannes SET updated_at = now_txt() WHERE id = ?', [panneId]);
+}
 
 export async function setPanneStatus(id: number, next: PanneStatus, actorId: number, notes?: string) {
   return transaction(async () => {
@@ -200,6 +224,7 @@ export async function setPanneStatus(id: number, next: PanneStatus, actorId: num
       params.push(`\n[${next}] ${notes}`);
     }
     await run(`UPDATE pannes SET ${sets.join(', ')} WHERE id = ?`, [...params, id]);
+    await addPanneComment(id, actorId, notes?.trim() || null, next);
 
     if (['resolved', 'closed', 'cancelled'].includes(next)) {
       if (p.room_id && !await roomHasOtherOpenPannes(p.room_id, id)) {
@@ -347,16 +372,18 @@ export async function addPannePhoto(input: { panne_id: number; file_path: string
 
 /* ---------- rooms / equipment history ------------------------------------ */
 
-export async function roomHistory(roomId: number) {
+export async function roomHistory(roomId: number, actor: Actor) {
+  const scope = panneScope(actor);
   return {
-    pannes: await all<any>(`${PANNE_SELECT} WHERE p.room_id = ? ORDER BY p.created_at DESC`, [roomId]),
+    pannes: await all<any>(`${PANNE_SELECT} WHERE p.room_id = ? AND ${scope.sql} ORDER BY p.created_at DESC`, [roomId, ...scope.params]),
     equipment: await all<any>('SELECT * FROM equipment WHERE room_id = ? ORDER BY name', [roomId]),
   };
 }
 
-export async function equipmentHistory(equipmentId: number) {
+export async function equipmentHistory(equipmentId: number, actor: Actor) {
+  const scope = panneScope(actor);
   return {
-    pannes: await all<any>(`${PANNE_SELECT} WHERE p.equipment_id = ? ORDER BY p.created_at DESC`, [equipmentId]),
+    pannes: await all<any>(`${PANNE_SELECT} WHERE p.equipment_id = ? AND ${scope.sql} ORDER BY p.created_at DESC`, [equipmentId, ...scope.params]),
     maintenance: await all<any>(
       `SELECT mc.*, ms.title AS schedule_title FROM maintenance_completions mc
        JOIN maintenance_schedules ms ON ms.id = mc.schedule_id
@@ -531,26 +558,25 @@ export async function addShiftHandover(input: { shift: string; notes: string; us
 
 /* ---------- dashboard -------------------------------------------------------- */
 
-export async function dashboardSummary() {
-  const byStatus = await all<{ status: string; c: number }>('SELECT status, COUNT(*) c FROM pannes GROUP BY status');
+export async function dashboardSummary(actor: Actor) {
+  // ticket figures only count what this user can see (a department team sees its own queue)
+  const scope = panneScope(actor);
+  const OPEN_IN = `p.status IN (${OPEN_PANNE_STATUSES.map(() => '?').join(',')})`;
+  const byStatus = await all<{ status: string; c: number }>(`SELECT p.status, COUNT(*) c FROM pannes p WHERE ${scope.sql} GROUP BY p.status`, scope.params);
   const statusMap: Record<string, number> = {};
   for (const r of byStatus) statusMap[r.status] = r.c;
 
   const openCount = OPEN_PANNE_STATUSES.reduce((s, k) => s + (statusMap[k] ?? 0), 0);
-  const criticalOpen = (await get<{ c: number }>(
-    `SELECT COUNT(*) c FROM pannes WHERE priority = 'critical' AND status IN (${OPEN_PANNE_STATUSES.map(() => '?').join(',')})`,
-    OPEN_PANNE_STATUSES
-  ))!.c;
-  const highOpen = (await get<{ c: number }>(
-    `SELECT COUNT(*) c FROM pannes WHERE priority = 'high' AND status IN (${OPEN_PANNE_STATUSES.map(() => '?').join(',')})`,
-    OPEN_PANNE_STATUSES
-  ))!.c;
-  const resolvedToday = (await get<{ c: number }>("SELECT COUNT(*) c FROM pannes WHERE substr(resolved_at, 1, 10) = today_txt()"))!.c;
+  const countOpen = async (priority: string) =>
+    (await get<{ c: number }>(`SELECT COUNT(*) c FROM pannes p WHERE p.priority = ? AND ${OPEN_IN} AND ${scope.sql}`, [priority, ...OPEN_PANNE_STATUSES, ...scope.params]))!.c;
+  const criticalOpen = await countOpen('critical');
+  const highOpen = await countOpen('high');
+  const resolvedToday = (await get<{ c: number }>(`SELECT COUNT(*) c FROM pannes p WHERE substr(p.resolved_at, 1, 10) = today_txt() AND ${scope.sql}`, scope.params))!.c;
   const inProgress = (statusMap['in_repair'] ?? 0) + (statusMap['testing'] ?? 0) + (statusMap['diagnosis'] ?? 0);
 
   const roomsWithProblems = (await get<{ c: number }>(
-    `SELECT COUNT(DISTINCT room_id) c FROM pannes WHERE room_id IS NOT NULL AND status IN (${OPEN_PANNE_STATUSES.map(() => '?').join(',')})`,
-    OPEN_PANNE_STATUSES
+    `SELECT COUNT(DISTINCT p.room_id) c FROM pannes p WHERE p.room_id IS NOT NULL AND ${OPEN_IN} AND ${scope.sql}`,
+    [...OPEN_PANNE_STATUSES, ...scope.params]
   ))!.c;
   const roomsOutOfService = (await get<{ c: number }>("SELECT COUNT(*) c FROM rooms WHERE status IN ('maintenance','out_of_service')"))!.c;
 
@@ -562,12 +588,13 @@ export async function dashboardSummary() {
      WHERE ms.active = 1 AND ms.next_due_date <= today_txt(interval '+7 days') ORDER BY ms.next_due_date LIMIT 12`
   );
 
-  const recentTickets = await all<any>(`${PANNE_SELECT} WHERE p.status IN (${OPEN_PANNE_STATUSES.map(() => '?').join(',')}) ORDER BY
-    CASE p.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, p.created_at DESC LIMIT 10`, OPEN_PANNE_STATUSES);
+  const recentTickets = await all<any>(`${PANNE_SELECT} WHERE ${OPEN_IN} AND ${scope.sql} ORDER BY
+    CASE p.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, p.created_at DESC LIMIT 10`, [...OPEN_PANNE_STATUSES, ...scope.params]);
 
   const recurring = await all<any>(
     `SELECT p.room_id, r.room_number, COUNT(*) c FROM pannes p JOIN rooms r ON r.id = p.room_id
-     WHERE p.room_id IS NOT NULL AND p.created_at >= now_txt(interval '-90 days') GROUP BY p.room_id, r.room_number HAVING COUNT(*) >= 3 ORDER BY c DESC LIMIT 6`
+     WHERE p.room_id IS NOT NULL AND p.created_at >= now_txt(interval '-90 days') AND ${scope.sql} GROUP BY p.room_id, r.room_number HAVING COUNT(*) >= 3 ORDER BY c DESC LIMIT 6`,
+    scope.params
   );
 
   return {

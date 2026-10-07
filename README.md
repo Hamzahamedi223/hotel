@@ -110,7 +110,25 @@ for every user.
 | `manager` | `manager123` | Responsable maintenance — assignation, achats, rapports |
 | `reception` | `reception123` | Réception — signalement de pannes |
 | `housekeeping` | `housekeeping123` | Housekeeping — signalement de pannes chambres |
-| `technicien` | `technicien123` | Technicien — diagnostic, interventions, pièces |
+| `technicien` | `technicien123` | Technicien maintenance — répond aux tickets Maintenance (ne crée pas de tickets) |
+| `informatique` | `informatique123` | Informatique (IT) — répond aux tickets IT (ne crée pas de tickets) |
+
+These accounts are only created on an empty database. On an existing one,
+create the IT account from *Utilisateurs* (rôle « Informatique (IT) »).
+
+### Who can do what on tickets
+
+| | Create | See | Comment | Status |
+|---|---|---|---|---|
+| Admin, Responsable | ✓ | all | ✓ | all, assign, close, cancel |
+| Réception, Housekeeping | ✓ | all | ✓ (e.g. answer an info request) | — |
+| Technicien maintenance | — | Maintenance tickets + assigned to them | ✓ | En cours, Réparé, Besoin de pièce, Besoin d'infos, Escalader |
+| Informatique (IT) | — | IT tickets + assigned to them | ✓ | same as maintenance |
+
+A ticket goes to IT when its category is Wi-Fi / Réseau, Informatique,
+Téléphonie or TV / IPTV, otherwise to Maintenance; the reporter can change it,
+and an admin can transfer it from *Assigner*. All of this is checked by the
+API, not only hidden in the UI.
 
 ## Features (V1)
 

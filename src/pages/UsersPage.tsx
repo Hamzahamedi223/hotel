@@ -4,14 +4,9 @@ import Modal from '../components/Modal';
 import { useToast, ToastHost } from '../components/Toast';
 import { IconPlus } from '../components/icons';
 import { useLiveTick } from '../lib/live';
+import { ROLE_LABELS } from '../../shared/types';
 
-const ROLES: [string, string][] = [
-  ['admin', 'Administrateur'],
-  ['manager', 'Responsable maintenance'],
-  ['reception', 'Réception'],
-  ['housekeeping', 'Housekeeping'],
-  ['technician', 'Technicien'],
-];
+const ROLES = Object.entries(ROLE_LABELS);
 
 export default function UsersPage() {
   const tick = useLiveTick();

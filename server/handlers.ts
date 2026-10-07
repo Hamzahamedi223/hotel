@@ -2,8 +2,8 @@ import bcrypt from 'bcryptjs';
 import { all, get, run, transaction } from './db.js';
 import { exportAll, restoreAll } from './backup.js';
 import { storePhoto } from './photos.js';
-import { hasPermission, PERMISSIONS, OPEN_PANNE_STATUSES } from '../shared/types.js';
-import type { UserRole } from '../shared/types.js';
+import { hasPermission, PERMISSIONS, OPEN_PANNE_STATUSES, USER_ROLES, canSetStatus, canViewPanne } from '../shared/types.js';
+import type { UserRole, PanneStatus } from '../shared/types.js';
 import {
   audit,
   settingsMap,
@@ -16,7 +16,10 @@ import {
   addPannePart,
   removePannePart,
   addPannePhoto,
+  addPanneComment,
   panneDetail,
+  panneScope,
+  type Actor,
   roomHistory,
   equipmentHistory,
   receiveStock,
@@ -38,7 +41,6 @@ import {
 } from './services.js';
 
 type Perm = keyof typeof PERMISSIONS;
-const USER_ROLES: UserRole[] = ['admin', 'manager', 'reception', 'housekeeping', 'technician'];
 
 /** Every handler receives the authenticated caller first; the rest are the client's arguments. */
 export type Handler = (ctx: { actorId: number | null }, ...args: any[]) => Promise<any>;
@@ -50,6 +52,29 @@ async function requireRole(userId: number, permission: Perm) {
   if (!user || !user.active) throw new Error('Utilisateur invalide ou désactivé.');
   if (!hasPermission(user.role, permission)) throw new Error(`Permission refusée : ${permission}.`);
   return user;
+}
+
+/** The logged-in caller (rpc.ts has already checked the token and that the account is active). */
+async function actorOf(userId: number | null): Promise<Actor> {
+  const user = userId == null ? null : await get<{ role: UserRole }>('SELECT role FROM users WHERE id = ?', [userId]);
+  if (!user) throw new Error('Utilisateur invalide ou désactivé.');
+  return { id: userId!, role: user.role };
+}
+
+/** Loads a ticket the actor may see, so a department team can't read or act on another team's tickets by id. */
+async function visiblePanne(actor: Actor, panneId: number) {
+  const p = await get<{ id: number; status: PanneStatus; department: string; assigned_to: number | null }>(
+    'SELECT id, status, department, assigned_to FROM pannes WHERE id = ?', [panneId]
+  );
+  if (!p || !canViewPanne(actor.role, actor.id, p)) throw new Error('Ticket introuvable.');
+  return p;
+}
+
+/** requireRole + visiblePanne: the guard for an action on one ticket. */
+async function requirePanne(actorId: number, permission: Perm, panneId: number) {
+  const user = await requireRole(actorId, permission);
+  const actor: Actor = { id: actorId, role: user.role };
+  return { actor, panne: await visiblePanne(actor, panneId) };
 }
 
 function buildSet(fields: string[], input: Record<string, any>) {
@@ -76,7 +101,7 @@ export function registerHandlers() {
   });
 
   ipcMain.handle('users:list', async () => await all('SELECT id, username, full_name, role, active FROM users ORDER BY full_name'));
-  ipcMain.handle('users:technicians', async () => await all("SELECT id, username, full_name FROM users WHERE role = 'technician' AND active = 1 ORDER BY full_name"));
+  ipcMain.handle('users:technicians', async () => await all("SELECT id, username, full_name, role FROM users WHERE role IN ('technician','it') AND active = 1 ORDER BY full_name"));
 
   ipcMain.handle('users:create', async (_e, actorId: number, input: any) => {
     await requireRole(actorId, 'user.manage');
@@ -127,7 +152,7 @@ export function registerHandlers() {
     ),
     contractors: await all('SELECT * FROM contractors WHERE active = 1 ORDER BY company'),
     suppliers: await all('SELECT * FROM suppliers WHERE active = 1 ORDER BY name'),
-    technicians: await all("SELECT id, username, full_name FROM users WHERE role = 'technician' AND active = 1 ORDER BY full_name"),
+    technicians: await all("SELECT id, username, full_name, role FROM users WHERE role IN ('technician','it') AND active = 1 ORDER BY full_name"),
     parts: await all('SELECT * FROM inventory_parts ORDER BY name'),
     settings: await settingsMap(),
   }));
@@ -166,7 +191,7 @@ export function registerHandlers() {
     return await all(`${ROOM_SELECT} ${where} ORDER BY b.name, r.room_number`, params);
   });
   ipcMain.handle('rooms:get', async (_e, id: number) => await get(`${ROOM_SELECT} WHERE r.id = ?`, [...OPEN_PANNE_STATUSES, id]));
-  ipcMain.handle('rooms:history', async (_e, id: number) => await roomHistory(id));
+  ipcMain.handle('rooms:history', async (ctx, id: number) => await roomHistory(id, await actorOf(ctx.actorId)));
   ipcMain.handle('rooms:save', async (_e, actorId: number, input: any) => {
     await requireRole(actorId, 'room.manage');
     if (input.id) {
@@ -226,7 +251,7 @@ export function registerHandlers() {
     return await all(`${EQUIPMENT_SELECT} ${where} ORDER BY e.name`, params);
   });
   ipcMain.handle('equipment:get', async (_e, id: number) => await get(`${EQUIPMENT_SELECT} WHERE e.id = ?`, [id]));
-  ipcMain.handle('equipment:history', async (_e, id: number) => await equipmentHistory(id));
+  ipcMain.handle('equipment:history', async (ctx, id: number) => await equipmentHistory(id, await actorOf(ctx.actorId)));
   async function nextEquipmentCode(): Promise<string> {
     const last = await get<{ code: string }>("SELECT code FROM equipment WHERE code LIKE 'EQ-%' ORDER BY id DESC LIMIT 1", []);
     const n = last ? parseInt(last.code.replace('EQ-', ''), 10) + 1 : 1;
@@ -322,9 +347,10 @@ export function registerHandlers() {
     LEFT JOIN users au ON au.id = p.assigned_to
     LEFT JOIN contractors c ON c.id = p.contractor_id`;
 
-  ipcMain.handle('pannes:list', async (_e, opts: { status?: string; scope?: string; priority?: string; category?: string; assignedTo?: number; query?: string } = {}) => {
-    const clauses: string[] = [];
-    const params: any[] = [];
+  ipcMain.handle('pannes:list', async (ctx, opts: { status?: string; scope?: string; priority?: string; category?: string; assignedTo?: number; query?: string } = {}) => {
+    const visible = panneScope(await actorOf(ctx.actorId));
+    const clauses: string[] = [visible.sql];
+    const params: any[] = [...visible.params];
     if (opts.status) { clauses.push('p.status = ?'); params.push(opts.status); }
     if (opts.scope === 'open') { clauses.push(`p.status IN (${OPEN_PANNE_STATUSES.map(() => '?').join(',')})`); params.push(...OPEN_PANNE_STATUSES); }
     if (opts.priority) { clauses.push('p.priority = ?'); params.push(opts.priority); }
@@ -341,7 +367,10 @@ export function registerHandlers() {
       params
     );
   });
-  ipcMain.handle('pannes:get', async (_e, id: number) => await panneDetail(id));
+  ipcMain.handle('pannes:get', async (ctx, id: number) => {
+    await visiblePanne(await actorOf(ctx.actorId), id);
+    return await panneDetail(id);
+  });
   ipcMain.handle('pannes:create', async (_e, actorId: number, input: PanneInput) => {
     await requireRole(actorId, 'panne.create');
     return createPanne({ ...input, user_id: actorId });
@@ -350,32 +379,50 @@ export function registerHandlers() {
     await requireRole(actorId, 'panne.assign');
     return assignPanne(id, input, actorId);
   });
-  ipcMain.handle('pannes:setStatus', async (_e, actorId: number, id: number, next: string, notes?: string) => {
-    await requireRole(actorId, next === 'closed' ? 'panne.close' : next === 'cancelled' ? 'panne.cancel' : 'panne.manage');
-    return setPanneStatus(id, next as any, actorId, notes);
+  ipcMain.handle('pannes:setStatus', async (_e, actorId: number, id: number, next: PanneStatus, notes?: string) => {
+    const { actor, panne } = await requirePanne(actorId, 'panne.comment', id);
+    if (!canSetStatus(actor.role, panne.status, next)) throw new Error('Permission refusée : changement de statut.');
+    return setPanneStatus(id, next, actorId, notes);
+  });
+  /** A message on the ticket's thread, optionally with a status change (how the teams respond). */
+  ipcMain.handle('pannes:comment', async (_e, actorId: number, id: number, input: { body?: string; status?: PanneStatus | null }) => {
+    const { actor, panne } = await requirePanne(actorId, 'panne.comment', id);
+    const body = String(input?.body ?? '').trim();
+    if (input?.status) {
+      if (!canSetStatus(actor.role, panne.status, input.status)) throw new Error('Permission refusée : changement de statut.');
+      return setPanneStatus(id, input.status, actorId, body || undefined);
+    }
+    if (!body) throw new Error('Le message est vide.');
+    return transaction(async () => {
+      await addPanneComment(id, actorId, body);
+      await audit(actorId, 'panne.comment', 'panne', id);
+      return await panneDetail(id);
+    });
   });
   ipcMain.handle('pannes:diagnosis', async (_e, actorId: number, id: number, input: any) => {
-    await requireRole(actorId, 'panne.manage');
+    await requirePanne(actorId, 'panne.manage', id);
     return saveDiagnosis(id, input, actorId);
   });
   ipcMain.handle('pannes:intervention', async (_e, actorId: number, input: any) => {
-    await requireRole(actorId, 'panne.manage');
+    await requirePanne(actorId, 'panne.manage', input?.panne_id);
     return addIntervention({ ...input, user_id: actorId });
   });
   ipcMain.handle('pannes:costs', async (_e, actorId: number, id: number, input: any) => {
-    await requireRole(actorId, 'panne.manage');
+    await requirePanne(actorId, 'panne.manage', id);
     return addPanneCosts(id, input, actorId);
   });
   ipcMain.handle('pannes:addPart', async (_e, actorId: number, input: any) => {
-    await requireRole(actorId, 'panne.manage');
+    await requirePanne(actorId, 'panne.manage', input?.panne_id);
     return addPannePart({ ...input, user_id: actorId });
   });
   ipcMain.handle('pannes:removePart', async (_e, actorId: number, partRowId: number) => {
-    await requireRole(actorId, 'panne.manage');
+    const row = await get<{ panne_id: number }>('SELECT panne_id FROM panne_parts WHERE id = ?', [partRowId]);
+    if (!row) throw new Error('Ligne introuvable.');
+    await requirePanne(actorId, 'panne.manage', row.panne_id);
     return removePannePart(partRowId, actorId);
   });
   ipcMain.handle('pannes:addPhoto', async (_e, actorId: number, input: any) => {
-    await requireRole(actorId, 'panne.create');
+    await requirePanne(actorId, 'panne.comment', input?.panne_id);
     const file_path = await storePhoto(input.file_path);
     return addPannePhoto({ ...input, file_path, user_id: actorId });
   });
@@ -469,7 +516,7 @@ export function registerHandlers() {
   ipcMain.handle('handovers:add', async (_e, actorId: number, input: any) => addShiftHandover({ ...input, user_id: actorId }));
 
   /* ---------- DASHBOARD ---------- */
-  ipcMain.handle('dashboard:summary', async () => dashboardSummary());
+  ipcMain.handle('dashboard:summary', async (ctx) => dashboardSummary(await actorOf(ctx.actorId)));
 
   /* ---------- REPORTS ---------- */
   ipcMain.handle('reports:frequency', async (_e, actorId: number, from: string, to: string) => { await requireRole(actorId, 'reports.view'); return reportFrequency(from, to); });

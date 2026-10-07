@@ -12,9 +12,17 @@ import {
   GUEST_IMPACT_LABELS,
   PANNE_STATUS_LABELS,
   REPORTER_ROLE_LABELS,
+  DEPARTMENT_LABELS,
+  ROLE_LABELS,
+  ROLE_DEPARTMENT,
+  ALLOWED_TRANSITIONS,
+  RESPONSE_STATUSES,
+  RESPONSE_LABELS,
   hasPermission,
+  canSetStatus,
+  departmentForCategory,
 } from '../../shared/types';
-import type { PanneStatus, PanneCategory, PannePriority, GuestImpact } from '../../shared/types';
+import type { PanneStatus, PanneCategory, PannePriority, GuestImpact, Department, UserRole } from '../../shared/types';
 import {
   IconSearch,
   IconPlus,
@@ -28,17 +36,10 @@ import {
 import { useLiveTick } from '../lib/live';
 import RoomPicker from '../components/RoomPicker';
 
-const NEXT_STATUSES: Record<PanneStatus, PanneStatus[]> = {
-  open: ['diagnosis', 'cancelled'],
-  assigned: ['diagnosis', 'waiting_parts', 'in_repair', 'cancelled'],
-  diagnosis: ['waiting_parts', 'in_repair', 'cancelled'],
-  waiting_parts: ['diagnosis', 'in_repair', 'cancelled'],
-  in_repair: ['waiting_parts', 'testing', 'cancelled'],
-  testing: ['in_repair', 'resolved', 'cancelled'],
-  resolved: ['in_repair', 'closed'],
-  closed: ['open'],
-  cancelled: ['open'],
-};
+/** Staff a ticket of this department can be assigned to (technicians for maintenance, IT users for IT). */
+function staffFor(technicians: any[], department: string, keepId?: number | null) {
+  return technicians.filter((t) => ROLE_DEPARTMENT[t.role as UserRole] === department || t.id === keepId);
+}
 
 const SCOPES: { key: string; label: string }[] = [
   { key: 'open', label: 'Ouverts' },
@@ -168,13 +169,18 @@ export default function PannesPage({ onOpenMenu, onNavigate }: { onOpenMenu: () 
               <div className={`text-xs mt-0.5 flex items-center gap-1.5 ${selectedId === r.id ? 'text-white/80' : 'text-ink-faint'}`}>
                 {selectedId !== r.id && <PannePriorityBadge priority={r.priority} />}
                 <span className="truncate">
+                  {r.department === 'it' && <span className="font-semibold">IT · </span>}
                   {r.room_number ? `Ch. ${r.room_number}` : r.area_name || r.building_name || '—'}
                   {r.assigned_to_name ? ` · ${r.assigned_to_name}` : r.contractor_name ? ` · ${r.contractor_name}` : ''}
                 </span>
               </div>
             </button>
           ))}
-          {rows.length === 0 && <p className="text-sm text-ink-faint text-center py-10">Aucun ticket.</p>}
+          {rows.length === 0 && (
+            <p className="text-sm text-ink-faint text-center py-10">
+              {hasPermission(user.role, 'panne.viewAll') ? 'Aucun ticket.' : 'Aucun ticket pour votre service.'}
+            </p>
+          )}
         </div>
       </div>
 
@@ -208,18 +214,20 @@ export default function PannesPage({ onOpenMenu, onNavigate }: { onOpenMenu: () 
 
             {p.description && <p className="text-sm text-ink-soft mb-4 whitespace-pre-wrap">{p.description}</p>}
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
+              <Stat label="Service" value={DEPARTMENT_LABELS[p.department as Department] ?? '—'} />
               <Stat label="Catégorie" value={PANNE_CATEGORY_LABELS[p.category as PanneCategory]} />
               <Stat label="Impact client" value={GUEST_IMPACT_LABELS[p.guest_impact as GuestImpact]} />
               <Stat label="Signalé par" value={`${p.reported_by_name ?? '—'}${p.reported_by_role ? ' (' + (REPORTER_ROLE_LABELS[p.reported_by_role] ?? p.reported_by_role) + ')' : ''}`} />
               <Stat label="Créé" value={dateTime(p.created_at)} />
             </div>
 
-            {hasPermission(user.role, 'panne.manage') && !['closed', 'cancelled'].includes(p.status) && (
+            {/* Administration: full status control. Department teams answer from the thread below instead. */}
+            {hasPermission(user.role, 'panne.status') && !['closed', 'cancelled'].includes(p.status) && (
               <div className="flex flex-wrap items-center gap-2 mb-6">
                 <span className="text-xs font-semibold text-ink-faint uppercase tracking-wide mr-1">Statut :</span>
-                {NEXT_STATUSES[p.status as PanneStatus]
-                  ?.filter((next) => (next === 'closed' ? hasPermission(user.role, 'panne.close') : next === 'cancelled' ? hasPermission(user.role, 'panne.cancel') : true))
+                {ALLOWED_TRANSITIONS[p.status as PanneStatus]
+                  ?.filter((next) => next !== 'assigned' && canSetStatus(user.role, p.status, next))
                   .map((next) => (
                     <button
                       key={next}
@@ -229,11 +237,15 @@ export default function PannesPage({ onOpenMenu, onNavigate }: { onOpenMenu: () 
                       {PANNE_STATUS_LABELS[next]}
                     </button>
                   ))}
-                <button onClick={() => setShowAssign(true)} className="btn-secondary btn-sm ml-auto">
-                  {p.assigned_to_name || p.contractor_name ? 'Réassigner' : 'Assigner'}
-                </button>
+                {hasPermission(user.role, 'panne.assign') && (
+                  <button onClick={() => setShowAssign(true)} className="btn-secondary btn-sm ml-auto">
+                    {p.assigned_to_name || p.contractor_name ? 'Réassigner' : 'Assigner'}
+                  </button>
+                )}
               </div>
             )}
+
+            <ThreadSection key={`thread-${p.id}`} panne={p} comments={detail.comments ?? []} onSaved={refreshDetail} show={show} />
 
             <Section title="Assignation">
               <div className="text-sm">
@@ -391,6 +403,99 @@ function Section({ title, action, children }: { title: string; action?: React.Re
   );
 }
 
+/**
+ * The ticket's conversation. Everyone who can see the ticket can write here;
+ * department teams (maintenance, IT) also pick their answer here — that is how
+ * they move a ticket, they have no other status control.
+ */
+function ThreadSection({ panne, comments, onSaved, show }: any) {
+  const user = useAuthStore((s) => s.user)!;
+  const [body, setBody] = useState('');
+  const [status, setStatus] = useState<PanneStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const responses = hasPermission(user.role, 'panne.respond')
+    ? RESPONSE_STATUSES.filter((s) => canSetStatus(user.role, panne.status, s))
+    : [];
+  const canWrite = hasPermission(user.role, 'panne.comment');
+  const needsBody = status === 'need_info' || status === 'escalated';
+
+  async function send() {
+    if (!status && !body.trim()) return show('Écrivez un message ou choisissez une réponse.', 'error');
+    if (needsBody && !body.trim()) return show(status === 'need_info' ? 'Précisez quelle information il vous faut.' : "Expliquez pourquoi il faut escalader.", 'error');
+    setBusy(true);
+    try {
+      await window.api.pannes.comment(user.id, panne.id, { body, status });
+      setBody('');
+      setStatus(null);
+      onSaved();
+      show(status ? `Réponse envoyée — ${PANNE_STATUS_LABELS[status]}` : 'Message envoyé.', 'success');
+    } catch (e: any) {
+      show(e.message ?? 'Erreur', 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Section title={`Suivi & réponses (${comments.length})`}>
+      {comments.length === 0 && <p className="text-sm text-ink-faint">Aucun message.</p>}
+      {comments.map((c: any) => (
+        <div key={c.id} className="py-2 border-b border-line last:border-0 text-sm">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <span>
+              <span className="font-semibold">{c.user_name ?? '—'}</span>
+              {c.user_role && <span className="text-xs text-ink-faint"> · {ROLE_LABELS[c.user_role as UserRole] ?? c.user_role}</span>}
+            </span>
+            <span className="text-xs text-ink-faint">{dateTime(c.created_at)}</span>
+          </div>
+          {c.status && (
+            <div className="mt-1">
+              <PanneStatusBadge status={c.status} />
+            </div>
+          )}
+          {c.body && <div className="text-ink-soft mt-1 whitespace-pre-wrap">{c.body}</div>}
+        </div>
+      ))}
+
+      {canWrite && (
+        <div className={comments.length ? 'mt-3 pt-3 border-t border-line' : 'mt-3'}>
+          {responses.length > 0 && (
+            <>
+              <div className="text-[11px] font-semibold uppercase text-ink-faint mb-1.5">Votre réponse</div>
+              <div className="flex flex-wrap gap-1.5 mb-2.5">
+                {responses.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setStatus(status === s ? null : s)}
+                    className={`btn-sm ${status === s ? (s === 'resolved' ? 'btn-success' : s === 'escalated' ? 'btn-danger-soft' : 'btn-primary') : 'btn-secondary'}`}
+                  >
+                    {RESPONSE_LABELS[s]}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          <textarea
+            className="input mb-2"
+            rows={2}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder={
+              status === 'need_info' ? 'Quelle information vous faut-il ?' :
+              status === 'escalated' ? 'Pourquoi ne pouvez-vous pas réparer ?' :
+              status === 'waiting_parts' ? 'Quelle pièce / quel matériel ?' :
+              'Ajouter un commentaire…'
+            }
+          />
+          <button disabled={busy} onClick={send} className="btn-primary btn-sm">
+            {status ? 'Envoyer la réponse' : 'Envoyer'}
+          </button>
+        </div>
+      )}
+    </Section>
+  );
+}
+
 function DiagnosisSection({ panne, onSaved, show, userId }: any) {
   const [f, setF] = useState({ diagnosis: panne.diagnosis ?? '', cause: panne.cause ?? '', recommended_action: panne.recommended_action ?? '' });
   const [dirty, setDirty] = useState(false);
@@ -468,11 +573,14 @@ function AssignModal({ panne, technicians, contractors, onClose, onSaved, show }
   const user = useAuthStore((s) => s.user)!;
   const [assignedTo, setAssignedTo] = useState<string>(panne.assigned_to ?? '');
   const [contractorId, setContractorId] = useState<string>(panne.contractor_id ?? '');
+  const [department, setDepartment] = useState<string>(panne.department ?? 'maintenance');
+  const staff = staffFor(technicians, department, panne.assigned_to);
   async function submit() {
     try {
       await window.api.pannes.assign(user.id, panne.id, {
         assigned_to: assignedTo ? Number(assignedTo) : null,
         contractor_id: contractorId ? Number(contractorId) : null,
+        department,
       });
       onSaved();
     } catch (e: any) {
@@ -486,10 +594,14 @@ function AssignModal({ panne, technicians, contractors, onClose, onSaved, show }
       width="w-[420px]"
       footer={<button onClick={submit} className="btn-primary btn-md w-full">Enregistrer</button>}
     >
+      <label className="label">Service</label>
+      <select className="select mb-3" value={department} onChange={(e) => setDepartment(e.target.value)}>
+        {Object.entries(DEPARTMENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+      </select>
       <label className="label">Technicien</label>
       <select className="select mb-3" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}>
         <option value="">— Aucun —</option>
-        {technicians.map((t: any) => (
+        {staff.map((t: any) => (
           <option key={t.id} value={t.id}>{t.full_name}</option>
         ))}
       </select>
@@ -507,7 +619,7 @@ function AssignModal({ panne, technicians, contractors, onClose, onSaved, show }
 function InterventionForm({ panneId, technicians, onClose, onSaved, show }: any) {
   const user = useAuthStore((s) => s.user)!;
   const now = new Date().toISOString().slice(0, 16);
-  const [f, setF] = useState({ technician_id: user.role === 'technician' ? user.id : technicians[0]?.id ?? '', description: '', started_at: now, finished_at: '', result: '' });
+  const [f, setF] = useState({ technician_id: ROLE_DEPARTMENT[user.role] ? user.id : technicians[0]?.id ?? '', description: '', started_at: now, finished_at: '', result: '' });
   const set = (k: string, v: any) => setF((x) => ({ ...x, [k]: v }));
   async function submit() {
     try {
@@ -620,11 +732,24 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
     building_id: buildings[0]?.id ?? '',
     equipment_id: '',
     // default to the logged-in person's own department
-    reported_by_role: ({ housekeeping: 'housekeeping', manager: 'manager', technician: 'maintenance' } as Record<string, string>)[user.role] ?? 'reception',
+    reported_by_role: ({ housekeeping: 'housekeeping', manager: 'manager' } as Record<string, string>)[user.role] ?? 'reception',
+    department: 'maintenance',
     assigned_to: '',
     contractor_id: '',
   });
-  const set = (k: string, v: any) => setF((x: any) => ({ ...x, [k]: v }));
+  // the team follows the category ("Wi-Fi" → IT) until the reporter picks one themselves
+  const [departmentTouched, setDepartmentTouched] = useState(false);
+  const set = (k: string, v: any) =>
+    setF((x: any) => {
+      const next = { ...x, [k]: v };
+      if (k === 'category' && !departmentTouched) next.department = departmentForCategory(v);
+      if (k === 'category' || k === 'department') {
+        // an assignee from the other team would be hidden from the list below
+        if (next.department !== x.department) next.assigned_to = '';
+      }
+      return next;
+    });
+  const staff = staffFor(technicians, f.department);
   const [busy, setBusy] = useState(false);
 
   const locationEquipment = equipment.filter((e: any) =>
@@ -648,6 +773,7 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
         building_id: f.location_type === 'building' && f.building_id ? Number(f.building_id) : null,
         equipment_id: f.equipment_id ? Number(f.equipment_id) : null,
         reported_by_role: f.reported_by_role,
+        department: f.department,
         assigned_to: f.assigned_to ? Number(f.assigned_to) : null,
         contractor_id: f.contractor_id ? Number(f.contractor_id) : null,
       });
@@ -740,7 +866,7 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="label">Signalé par</label>
           <select className="select" value={f.reported_by_role} onChange={(e) => set('reported_by_role', e.target.value)}>
@@ -748,10 +874,23 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
           </select>
         </div>
         <div>
+          <label className="label">Service concerné</label>
+          <select
+            className="select"
+            value={f.department}
+            onChange={(e) => {
+              setDepartmentTouched(true);
+              set('department', e.target.value);
+            }}
+          >
+            {Object.entries(DEPARTMENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+        <div>
           <label className="label">Assigner à</label>
           <select className="select" value={f.assigned_to} onChange={(e) => set('assigned_to', e.target.value)}>
             <option value="">— Plus tard —</option>
-            {technicians.map((t: any) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+            {staff.map((t: any) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
           </select>
         </div>
         <div>

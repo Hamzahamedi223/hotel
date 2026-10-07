@@ -54,6 +54,7 @@ interface HotelApi {
     create(actorId: number, input: any): Promise<any>;
     assign(actorId: number, id: number, input: any): Promise<any>;
     setStatus(actorId: number, id: number, next: string, notes?: string): Promise<any>;
+    comment(actorId: number, id: number, input: { body?: string; status?: string | null }): Promise<any>;
     diagnosis(actorId: number, id: number, input: any): Promise<any>;
     intervention(actorId: number, input: any): Promise<any>;
     costs(actorId: number, id: number, input: any): Promise<any>;

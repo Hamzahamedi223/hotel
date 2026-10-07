@@ -18,7 +18,9 @@ async function main() {
 
   const tables: Record<string, any[]> = {};
   for (const t of TABLE_ORDER) {
-    const res = db.exec(`SELECT * FROM ${t}`)[0];
+    // tables added after the desktop version (e.g. panne_comments) don't exist there
+    const exists = db.exec(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '${t}'`).length > 0;
+    const res = exists ? db.exec(`SELECT * FROM ${t}`)[0] : undefined;
     tables[t] = res ? res.values.map((v) => Object.fromEntries(res.columns.map((c, i) => [c, v[i]]))) : [];
   }
   // Desktop photos were local file paths that don't exist online

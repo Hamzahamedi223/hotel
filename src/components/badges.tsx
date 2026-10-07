@@ -26,6 +26,8 @@ const PANNE_TONE: Record<PanneStatus, string> = {
   waiting_parts: 'badge-warn',
   in_repair: 'badge-warn',
   testing: 'badge-warn',
+  need_info: 'badge-brand',
+  escalated: 'badge-danger',
   resolved: 'badge-success',
   closed: 'badge-neutral',
   cancelled: 'badge-neutral',

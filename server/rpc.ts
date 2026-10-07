@@ -9,7 +9,7 @@ registerHandlers();
 const ACTOR_FIRST = new Set([
   'users:create', 'users:update', 'users:setActive', 'users:resetPassword', 'buildings:save', 'buildings:delete', 'rooms:save', 'rooms:delete',
   'areas:save', 'areas:delete', 'equipment:create', 'equipment:update', 'equipment:delete', 'contractors:save', 'contractors:delete',
-  'suppliers:save', 'suppliers:delete', 'pannes:create', 'pannes:assign', 'pannes:setStatus', 'pannes:diagnosis', 'pannes:intervention',
+  'suppliers:save', 'suppliers:delete', 'pannes:create', 'pannes:assign', 'pannes:setStatus', 'pannes:comment', 'pannes:diagnosis', 'pannes:intervention',
   'pannes:costs', 'pannes:addPart', 'pannes:removePart', 'pannes:addPhoto', 'inventory:save', 'inventory:delete', 'inventory:receive',
   'inventory:adjust', 'purchaseOrders:create', 'purchaseOrders:receive', 'maintenanceSchedules:save', 'maintenanceSchedules:delete',
   'maintenanceSchedules:complete', 'handovers:add', 'reports:frequency', 'reports:rooms', 'reports:equipment', 'reports:costs',
