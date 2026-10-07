@@ -1,7 +1,8 @@
 import bcrypt from 'bcryptjs';
 import { all, get, run, transaction } from './db.js';
 import { exportAll, restoreAll } from './backup.js';
-import { storePhoto } from './photos.js';
+import { storePhoto, archiveDownloadUrl } from './photos.js';
+import { runArchive, eligibleCount, ARCHIVE_AFTER_DAYS } from './archive.js';
 import { hasPermission, PERMISSIONS, OPEN_PANNE_STATUSES, USER_ROLES, canSetStatus, canViewPanne } from '../shared/types.js';
 import type { UserRole, PanneStatus } from '../shared/types.js';
 import {
@@ -352,6 +353,7 @@ export function registerHandlers() {
     const clauses: string[] = [visible.sql];
     const params: any[] = [...visible.params];
     if (opts.status) { clauses.push('p.status = ?'); params.push(opts.status); }
+    if (opts.scope === 'done') { clauses.push("p.status IN ('resolved','closed','cancelled')"); }
     if (opts.scope === 'open') { clauses.push(`p.status IN (${OPEN_PANNE_STATUSES.map(() => '?').join(',')})`); params.push(...OPEN_PANNE_STATUSES); }
     if (opts.priority) { clauses.push('p.priority = ?'); params.push(opts.priority); }
     if (opts.category) { clauses.push('p.category = ?'); params.push(opts.category); }
@@ -425,6 +427,34 @@ export function registerHandlers() {
     await requirePanne(actorId, 'panne.comment', input?.panne_id);
     const file_path = await storePhoto(input.file_path);
     return addPannePhoto({ ...input, file_path, user_id: actorId });
+  });
+
+  /* ---------- ARCHIVES ---------- */
+  ipcMain.handle('archives:list', async (ctx) => {
+    await requireRole(ctx.actorId!, 'archive.view');
+    return {
+      afterDays: ARCHIVE_AFTER_DAYS,
+      pending: await eligibleCount(),
+      archives: await all(
+        `SELECT a.id, a.created_at, a.period_from, a.period_to, a.ticket_count, a.ticket_numbers, a.size_bytes, u.full_name AS created_by_name
+         FROM archives a LEFT JOIN users u ON u.id = a.created_by ORDER BY a.id DESC`
+      ),
+    };
+  });
+  ipcMain.handle('archives:download', async (ctx, id: number) => {
+    await requireRole(ctx.actorId!, 'archive.view');
+    const a = await get<{ created_at: string; file_name: string | null; pdf_base64: string | null }>(
+      'SELECT created_at, file_name, pdf_base64 FROM archives WHERE id = ?', [id]
+    );
+    if (!a) throw new Error('Archive introuvable.');
+    const downloadAs = `archive-tickets-${a.created_at.slice(0, 10)}-${id}.pdf`;
+    if (a.file_name) return { url: await archiveDownloadUrl(a.file_name, downloadAs), name: downloadAs };
+    return { url: `data:application/pdf;base64,${a.pdf_base64}`, name: downloadAs };
+  });
+  /** Same job as the weekly cron (api/cron-archive.ts), on demand. */
+  ipcMain.handle('archives:run', async (_e, actorId: number) => {
+    await requireRole(actorId, 'archive.run');
+    return runArchive(actorId);
   });
 
   /* ---------- INVENTORY ---------- */

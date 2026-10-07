@@ -26,6 +26,7 @@ export type View =
   | 'contractors'
   | 'reports'
   | 'audit'
+  | 'archives'
   | 'users'
   | 'settings';
 
@@ -64,6 +65,7 @@ const GROUPS: { title: string; items: { key: View; label: string; icon: (p: any)
   {
     title: 'Administration',
     items: [
+      { key: 'archives', label: 'Archives (PDF)', icon: IconFileText, perm: 'archive.view' },
       { key: 'audit', label: "Journal d'audit", icon: IconShield, perm: 'audit.view' },
       { key: 'users', label: 'Utilisateurs', icon: IconUsers, perm: 'user.manage' },
       { key: 'settings', label: 'Réglages', icon: IconSettings, perm: 'settings.manage' },

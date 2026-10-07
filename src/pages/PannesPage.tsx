@@ -45,6 +45,7 @@ function staffFor(technicians: any[], department: string, keepId?: number | null
 
 const SCOPES: { key: string; label: string }[] = [
   { key: 'open', label: 'Ouverts' },
+  { key: 'done', label: 'Terminés' },
   { key: '', label: 'Tous' },
 ];
 

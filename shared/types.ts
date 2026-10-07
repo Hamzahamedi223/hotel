@@ -273,6 +273,9 @@ export const PERMISSIONS: Record<string, UserRole[]> = {
   'contractor.manage': ['admin', 'manager'],
   'reports.view': ['admin', 'manager'],
   'audit.view': ['admin', 'manager'],
+  /** Weekly PDF archives of finished tickets (server/archive.ts). */
+  'archive.view': ['admin', 'manager'],
+  'archive.run': ['admin'],
   'user.manage': ['admin'],
   'settings.manage': ['admin'],
 };

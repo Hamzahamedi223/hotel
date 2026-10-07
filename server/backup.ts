@@ -5,7 +5,7 @@ export const TABLE_ORDER = [
   'users', 'settings', 'buildings', 'rooms', 'areas', 'equipment', 'contractors', 'suppliers',
   'inventory_parts', 'purchase_orders', 'purchase_order_lines', 'pannes', 'panne_interventions',
   'panne_parts', 'panne_photos', 'panne_comments', 'inventory_movements', 'maintenance_schedules',
-  'maintenance_completions', 'shift_handovers', 'audit_logs',
+  'maintenance_completions', 'shift_handovers', 'archives', 'audit_logs',
 ];
 
 export interface BackupFile {

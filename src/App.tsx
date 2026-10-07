@@ -12,6 +12,7 @@ import ContractorsPage from './pages/ContractorsPage';
 import ReportsPage from './pages/ReportsPage';
 import UsersPage from './pages/UsersPage';
 import AuditLogPage from './pages/AuditLogPage';
+import ArchivesPage from './pages/ArchivesPage';
 import SettingsPage from './pages/SettingsPage';
 import Drawer, { ADVANCED_VIEWS, type View } from './components/Drawer';
 import { useSimpleMode } from './lib/mode';
@@ -30,6 +31,7 @@ const TITLES: Record<View, string> = {
   contractors: 'Prestataires',
   reports: 'Rapports',
   audit: "Journal d'audit",
+  archives: 'Archives',
   users: 'Utilisateurs',
   settings: 'Réglages',
 };
@@ -142,6 +144,7 @@ export default function App() {
             {view === 'reports' && <ReportsPage />}
             {view === 'users' && <UsersPage />}
             {view === 'audit' && <AuditLogPage />}
+            {view === 'archives' && <ArchivesPage />}
             {view === 'settings' && <SettingsPage />}
           </div>
         </main>

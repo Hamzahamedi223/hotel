@@ -5,9 +5,20 @@
   "outputDirectory": "dist",
   "functions": {
     "api/rpc.ts": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "node_modules/pdfkit/js/data/**"
+    },
+    "api/cron-archive.ts": {
+      "maxDuration": 60,
+      "includeFiles": "node_modules/pdfkit/js/data/**"
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron-archive",
+      "schedule": "0 2 * * 1"
+    }
+  ],
   "regions": [
     "dub1"
   ]

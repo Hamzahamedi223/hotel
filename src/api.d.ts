@@ -62,6 +62,11 @@ interface HotelApi {
     removePart(actorId: number, partRowId: number): Promise<any>;
     addPhoto(actorId: number, input: any): Promise<any>;
   };
+  archives: {
+    list(): Promise<{ afterDays: number; pending: number; archives: any[] }>;
+    download(id: number): Promise<{ url: string; name: string }>;
+    run(actorId: number): Promise<{ archived: number; remaining: number; archives: { id: number; tickets: number }[] }>;
+  };
   inventory: {
     list(): Promise<any[]>;
     lowStock(): Promise<any[]>;

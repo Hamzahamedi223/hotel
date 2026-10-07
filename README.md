@@ -130,6 +130,20 @@ Téléphonie or TV / IPTV, otherwise to Maintenance; the reporter can change it,
 and an admin can transfer it from *Assigner*. All of this is checked by the
 API, not only hidden in the UI.
 
+## History & weekly PDF archive
+
+Finished tickets (résolu / clôturé / annulé) stay in the app for 14 days after
+their last activity (*Livre de panne → Terminés*). Every Monday at 02:00 UTC a
+Vercel Cron job exports them to one PDF — summary, then each ticket with its
+thread and small photos — stores it in the private `archives` Supabase
+Storage bucket, and only then deletes those tickets and their photos.
+Unfinished tickets are never deleted. Admins download the PDFs from
+*Menu → Archives*, and can run it on demand there (« Archiver maintenant »).
+
+**Setup:** in Vercel → Settings → Environment Variables add `CRON_SECRET`
+(any long random string), then redeploy. Without it the weekly job refuses to
+run (the « Archiver maintenant » button still works).
+
 ## Features (V1)
 
 - **Livre de panne numérique** : ticket par panne (titre, description,

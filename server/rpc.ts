@@ -13,8 +13,15 @@ const ACTOR_FIRST = new Set([
   'pannes:costs', 'pannes:addPart', 'pannes:removePart', 'pannes:addPhoto', 'inventory:save', 'inventory:delete', 'inventory:receive',
   'inventory:adjust', 'purchaseOrders:create', 'purchaseOrders:receive', 'maintenanceSchedules:save', 'maintenanceSchedules:delete',
   'maintenanceSchedules:complete', 'handovers:add', 'reports:frequency', 'reports:rooms', 'reports:equipment', 'reports:costs',
-  'reports:technicians', 'reports:resolutionTime', 'reports:auditLog', 'settings:set', 'backup:create', 'backup:restore',
+  'reports:technicians', 'reports:resolutionTime', 'reports:auditLog', 'settings:set', 'backup:create', 'backup:restore', 'archives:run',
 ]);
+
+/** Entry point for the weekly cron job: archive finished tickets older than 14 days. */
+export async function scheduledArchive() {
+  await ensureReady(initDatabase);
+  const { runArchive } = await import('./archive.js');
+  return runArchive(null);
+}
 
 export class RpcError extends Error {
   constructor(message: string, public status: number) {
