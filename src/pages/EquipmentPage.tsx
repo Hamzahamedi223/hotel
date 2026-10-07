@@ -8,6 +8,7 @@ import { dateOnly, dateTime, daysBadge, money } from '../lib/format';
 import { EQUIPMENT_CATEGORY_LABELS, EQUIPMENT_STATUS_LABELS } from '../../shared/types';
 import { IconSearch, IconPlus, IconWrench, IconArrowLeft } from '../components/icons';
 import { useLiveTick } from '../lib/live';
+import { roomLabel } from '../components/RoomPicker';
 
 export default function EquipmentPage() {
   const tick = useLiveTick();
@@ -271,7 +272,7 @@ function EquipmentForm({ editing, buildings, rooms, areas, onClose, onSaved, sho
             <label className="label">Chambre</label>
             <select className="select" value={f.room_id ?? ''} onChange={(e) => set('room_id', e.target.value)}>
               <option value="">—</option>
-              {rooms.map((r: any) => <option key={r.id} value={r.id}>{r.room_number} — {r.building_name}</option>)}
+              {rooms.map((r: any) => <option key={r.id} value={r.id}>{roomLabel(r)}</option>)}
             </select>
           </div>
         )}

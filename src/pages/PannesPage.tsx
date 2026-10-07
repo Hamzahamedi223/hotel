@@ -26,6 +26,7 @@ import {
   IconAlertTriangle,
 } from '../components/icons';
 import { useLiveTick } from '../lib/live';
+import RoomPicker from '../components/RoomPicker';
 
 const NEXT_STATUSES: Record<PanneStatus, PanneStatus[]> = {
   open: ['diagnosis', 'cancelled'],
@@ -614,11 +615,12 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
     priority: 'medium',
     guest_impact: 'none',
     location_type: 'room',
-    room_id: rooms[0]?.id ?? '',
+    room_id: '', // must be picked: a default room would silently mislabel tickets
     area_id: areas[0]?.id ?? '',
     building_id: buildings[0]?.id ?? '',
     equipment_id: '',
-    reported_by_role: 'reception',
+    // default to the logged-in person's own department
+    reported_by_role: ({ housekeeping: 'housekeeping', manager: 'manager', technician: 'maintenance' } as Record<string, string>)[user.role] ?? 'reception',
     assigned_to: '',
     contractor_id: '',
   });
@@ -631,6 +633,7 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
 
   async function submit() {
     if (!f.title) return show('Le titre est requis.', 'error');
+    if (f.location_type === 'room' && !f.room_id) return show('Choisissez la chambre.', 'error');
     setBusy(true);
     try {
       const result = await window.api.pannes.create(user.id, {
@@ -706,16 +709,14 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
         {f.location_type === 'room' && (
           <div className="col-span-2">
             <label className="label">Chambre</label>
-            <select className="select" value={f.room_id} onChange={(e) => set('room_id', e.target.value)}>
-              {rooms.map((r: any) => <option key={r.id} value={r.id}>{r.room_number} — {r.building_name}</option>)}
-            </select>
+            <RoomPicker rooms={rooms} value={f.room_id} onChange={(id) => set('room_id', id)} />
           </div>
         )}
         {f.location_type === 'area' && (
           <div className="col-span-2">
             <label className="label">Zone</label>
             <select className="select" value={f.area_id} onChange={(e) => set('area_id', e.target.value)}>
-              {areas.map((a: any) => <option key={a.id} value={a.id}>{a.name} — {a.building_name}</option>)}
+              {areas.map((a: any) => <option key={a.id} value={a.id}>{a.name}{a.building_name ? ` — ${a.building_name}` : ''}</option>)}
             </select>
           </div>
         )}
