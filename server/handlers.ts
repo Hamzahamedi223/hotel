@@ -38,6 +38,7 @@ import {
 } from './services.js';
 
 type Perm = keyof typeof PERMISSIONS;
+const USER_ROLES: UserRole[] = ['admin', 'manager', 'reception', 'housekeeping', 'technician'];
 
 /** Every handler receives the authenticated caller first; the rest are the client's arguments. */
 export type Handler = (ctx: { actorId: number | null }, ...args: any[]) => Promise<any>;
@@ -85,6 +86,22 @@ export function registerHandlers() {
     ]);
     await audit(actorId, 'user.create', 'user', lastInsertRowid, { username: input.username, role: input.role });
     return { id: lastInsertRowid };
+  });
+  ipcMain.handle('users:update', async (_e, actorId: number, userId: number, input: any) => {
+    await requireRole(actorId, 'user.manage');
+    const username = String(input?.username ?? '').trim();
+    const full_name = String(input?.full_name ?? '').trim();
+    const role = String(input?.role ?? '') as UserRole;
+    if (!username || !full_name) throw new Error('Nom et identifiant sont requis.');
+    if (!USER_ROLES.includes(role)) throw new Error('Rôle invalide.');
+    if (actorId === userId && role !== 'admin') throw new Error('Vous ne pouvez pas retirer votre propre rôle administrateur.');
+    const before = await get<any>('SELECT username, full_name, role FROM users WHERE id = ?', [userId]);
+    if (!before) throw new Error('Utilisateur introuvable.');
+    if (await get('SELECT id FROM users WHERE username = ? AND id <> ?', [username, userId])) {
+      throw new Error(`L'identifiant « ${username} » est déjà utilisé.`);
+    }
+    await run('UPDATE users SET username = ?, full_name = ?, role = ? WHERE id = ?', [username, full_name, role, userId]);
+    await audit(actorId, 'user.update', 'user', userId, { before, after: { username, full_name, role } });
   });
   ipcMain.handle('users:setActive', async (_e, actorId: number, userId: number, active: boolean) => {
     await requireRole(actorId, 'user.manage');

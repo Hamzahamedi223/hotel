@@ -21,6 +21,8 @@ export default function UsersPage() {
   const [form, setForm] = useState({ username: '', password: '', full_name: '', role: 'technician' });
   const [resetFor, setResetFor] = useState<any | null>(null);
   const [newPw, setNewPw] = useState('');
+  const [editFor, setEditFor] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({ username: '', full_name: '', role: 'technician' });
   const { toast, show } = useToast();
 
   const load = () => window.api.users.list().then(setRows);
@@ -37,6 +39,20 @@ export default function UsersPage() {
       setForm({ username: '', password: '', full_name: '', role: 'technician' });
       load();
       show('Utilisateur créé.', 'success');
+    } catch (e: any) {
+      show(e.message, 'error');
+    }
+  }
+
+  async function saveEdit() {
+    const input = { username: editForm.username.trim(), full_name: editForm.full_name.trim(), role: editForm.role };
+    if (!input.username || !input.full_name) return show('Nom et identifiant sont requis.', 'error');
+    try {
+      await window.api.users.update(me.id, editFor.id, input);
+      if (editFor.id === me.id) useAuthStore.getState().patchUser(input as any);
+      setEditFor(null);
+      load();
+      show('Utilisateur modifié.', 'success');
     } catch (e: any) {
       show(e.message, 'error');
     }
@@ -70,6 +86,15 @@ export default function UsersPage() {
                 <td>{ROLES.find((r) => r[0] === u.role)?.[1] ?? u.role}</td>
                 <td>{u.active ? <span className="badge-success">Actif</span> : <span className="badge-neutral">Désactivé</span>}</td>
                 <td className="text-right whitespace-nowrap">
+                  <button
+                    onClick={() => {
+                      setEditFor(u);
+                      setEditForm({ username: u.username, full_name: u.full_name, role: u.role });
+                    }}
+                    className="btn-ghost btn-xs"
+                  >
+                    Modifier
+                  </button>
                   <button onClick={() => { setResetFor(u); setNewPw(''); }} className="btn-ghost btn-xs">
                     Mot de passe
                   </button>
@@ -124,6 +149,45 @@ export default function UsersPage() {
               </option>
             ))}
           </select>
+        </Modal>
+      )}
+
+      {editFor && (
+        <Modal
+          title={`Modifier — ${editFor.full_name}`}
+          onClose={() => setEditFor(null)}
+          width="w-96"
+          footer={
+            <div className="flex gap-2">
+              <button onClick={() => setEditFor(null)} className="btn-secondary btn-md flex-1">
+                Annuler
+              </button>
+              <button onClick={saveEdit} className="btn-primary btn-md flex-1">
+                Enregistrer
+              </button>
+            </div>
+          }
+        >
+          <label className="label">Nom complet</label>
+          <input className="input mb-3" value={editForm.full_name} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} />
+          <label className="label">Identifiant</label>
+          <input className="input mb-3" value={editForm.username} onChange={(e) => setEditForm({ ...editForm, username: e.target.value })} />
+          <label className="label">Rôle</label>
+          <select
+            className="select"
+            value={editForm.role}
+            onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+            disabled={editFor.id === me.id}
+          >
+            {ROLES.map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+          {editFor.id === me.id && (
+            <p className="text-xs text-slate-500 mt-1">Vous ne pouvez pas changer votre propre rôle.</p>
+          )}
         </Modal>
       )}
 

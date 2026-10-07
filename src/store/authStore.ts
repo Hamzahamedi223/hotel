@@ -13,6 +13,8 @@ interface AuthState {
   user: CurrentUser | null;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
+  /** After an admin edits their own account, so the header/session show the new name. */
+  patchUser: (changes: Partial<CurrentUser>) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -27,6 +29,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     saveSession(null);
     set({ user: null });
   },
+  patchUser: (changes) =>
+    set((s) => {
+      if (!s.user) return {};
+      const user = { ...s.user, ...changes };
+      const session = loadSession();
+      if (session) saveSession({ ...session, user });
+      return { user };
+    }),
 }));
 
 setUnauthorizedHandler(() => useAuthStore.getState().logout());

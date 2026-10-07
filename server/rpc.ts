@@ -7,7 +7,7 @@ registerHandlers();
 
 /** Channels whose first client argument is the acting user's id — replaced with the token's user. */
 const ACTOR_FIRST = new Set([
-  'users:create', 'users:setActive', 'users:resetPassword', 'buildings:save', 'buildings:delete', 'rooms:save', 'rooms:delete',
+  'users:create', 'users:update', 'users:setActive', 'users:resetPassword', 'buildings:save', 'buildings:delete', 'rooms:save', 'rooms:delete',
   'areas:save', 'areas:delete', 'equipment:create', 'equipment:update', 'equipment:delete', 'contractors:save', 'contractors:delete',
   'suppliers:save', 'suppliers:delete', 'pannes:create', 'pannes:assign', 'pannes:setStatus', 'pannes:diagnosis', 'pannes:intervention',
   'pannes:costs', 'pannes:addPart', 'pannes:removePart', 'pannes:addPhoto', 'inventory:save', 'inventory:delete', 'inventory:receive',

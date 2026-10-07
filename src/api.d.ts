@@ -8,6 +8,7 @@ interface HotelApi {
     list(): Promise<any[]>;
     technicians(): Promise<any[]>;
     create(actorId: number, input: any): Promise<{ id: number }>;
+    update(actorId: number, userId: number, input: { username: string; full_name: string; role: string }): Promise<void>;
     setActive(actorId: number, userId: number, active: boolean): Promise<void>;
     resetPassword(actorId: number, userId: number, pw: string): Promise<void>;
   };
