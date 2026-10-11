@@ -55,11 +55,13 @@ async function rpc(method: string, args: unknown[]): Promise<any> {
 
 /* ---------- browser replacements for desktop-only calls ---------- */
 
-function pickFile(accept: string): Promise<File | null> {
+function pickFile(accept: string, camera = false): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = accept;
+    // phones open the back camera directly; desktops ignore this and show the file chooser
+    if (camera) input.capture = 'environment';
     input.onchange = () => resolve(input.files?.[0] ?? null);
     // no event fires on cancel in every browser; a dangling promise is harmless here
     input.click();
@@ -112,8 +114,8 @@ function download(filename: string, text: string) {
 
 const local: Record<string, Record<string, (...args: any[]) => Promise<any>>> = {
   photos: {
-    pick: async () => {
-      const file = await pickFile('image/*');
+    pick: async (_actorId: number, camera = false) => {
+      const file = await pickFile('image/*', camera);
       return file ? photoToDataUrl(file) : null;
     },
   },

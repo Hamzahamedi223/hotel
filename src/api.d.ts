@@ -108,8 +108,8 @@ interface HotelApi {
   settings: { get(): Promise<Record<string, string>>; set(actorId: number, key: string, value: string): Promise<void> };
   /** create downloads a JSON file; restore asks for one (false if the user cancelled). */
   backup: { create(actorId: number): Promise<{ path: string }>; restore(actorId: number): Promise<boolean> };
-  /** Opens the camera / gallery; resolves to a resized image as a data URL. */
-  photos: { pick(actorId: number): Promise<string | null> };
+  /** Opens the gallery, or the camera when `camera` is set; resolves to a resized image as a data URL. */
+  photos: { pick(actorId: number, camera?: boolean): Promise<string | null> };
   print: { document(html: string): Promise<void> };
 }
 

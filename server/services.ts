@@ -145,6 +145,7 @@ export interface PanneInput {
   reported_by_role?: string | null;
   department?: string | null;
   notes?: string | null;
+  problem_kind?: string | null;
   assigned_to?: number | null;
   contractor_id?: number | null;
   user_id: number;
@@ -159,14 +160,15 @@ export async function createPanne(input: PanneInput) {
       `INSERT INTO pannes
         (ticket_number, title, description, category, priority, guest_impact, location_type,
          room_id, area_id, building_id, equipment_id, reported_by_user_id, reported_by_role, department,
-         status, assigned_to, contractor_id, notes, assigned_at)
-       VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?, ?)`,
+         status, assigned_to, contractor_id, notes, assigned_at, problem_kind)
+       VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?, ?,?)`,
       [
         number, input.title, input.description ?? null, input.category, input.priority, input.guest_impact, input.location_type,
         input.room_id ?? null, input.area_id ?? null, input.building_id ?? null, input.equipment_id ?? null,
         input.user_id, input.reported_by_role ?? null, department,
         status, input.assigned_to ?? null, input.contractor_id ?? null, input.notes ?? null,
         status === 'assigned' ? new Date().toISOString() : null,
+        typeof input.problem_kind === 'string' && input.problem_kind ? input.problem_kind.slice(0, 30) : null,
       ]
     );
     if (input.room_id && shouldTakeRoomOutOfService(input)) await setRoomStatus(input.room_id, 'maintenance');

@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS pannes (
   contractor_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
   total_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
   notes TEXT,
+  problem_kind TEXT,
   created_at TEXT NOT NULL DEFAULT (now_txt()),
   assigned_at TEXT,
   resolved_at TEXT,
@@ -199,6 +200,8 @@ CREATE TABLE IF NOT EXISTS pannes (
 -- need_info / escalated statuses. Each CHECK is only rebuilt when it is still
 -- the old one, so a normal boot does no ALTER at all.
 ALTER TABLE pannes ADD COLUMN IF NOT EXISTS department TEXT NOT NULL DEFAULT 'maintenance' CHECK(department IN ('maintenance','it'));
+-- The picture the reporter tapped (paint, electricity, …), shown back to whoever receives the ticket.
+ALTER TABLE pannes ADD COLUMN IF NOT EXISTS problem_kind TEXT;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check' AND pg_get_constraintdef(oid) LIKE '%''it''%') THEN

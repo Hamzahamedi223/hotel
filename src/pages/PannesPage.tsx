@@ -29,6 +29,12 @@ import {
   IconClipboardList,
   IconPrinter,
   IconCamera,
+  IconImage,
+  IconPaintRoller,
+  IconZap,
+  IconPlunger,
+  IconDroplet,
+  IconDoor,
   IconTrash,
   IconAlertTriangle,
   IconX,
@@ -169,7 +175,10 @@ export default function PannesPage({ onOpenMenu, onNavigate }: { onOpenMenu: () 
                   <PanneStatusBadge status={r.status} />
                 )}
               </div>
-              <div className="font-semibold text-sm truncate mt-0.5">{r.title}</div>
+              <div className="font-semibold text-sm mt-0.5 flex items-center gap-1.5">
+                <KindIcon kind={r.problem_kind} size={18} plain={selectedId === r.id} />
+                <span className="truncate">{r.title}</span>
+              </div>
               <div className={`text-xs mt-0.5 flex items-center gap-1.5 ${selectedId === r.id ? 'text-white/80' : 'text-ink-faint'}`}>
                 {selectedId !== r.id && <PannePriorityBadge priority={r.priority} />}
                 <span className="truncate">
@@ -202,6 +211,7 @@ export default function PannesPage({ onOpenMenu, onNavigate }: { onOpenMenu: () 
             <div className="flex items-start justify-between mb-4 gap-3 flex-wrap">
               <div className="min-w-0">
                 <div className="flex items-center gap-2.5 flex-wrap">
+                  <KindIcon kind={p.problem_kind} size={30} />
                   <h2 className="text-xl font-bold">{p.title}</h2>
                   <PannePriorityBadge priority={p.priority} />
                   <PanneStatusBadge status={p.status} />
@@ -735,6 +745,26 @@ function PartForm({ panneId, parts, onClose, onSaved, show }: any) {
 }
 
 
+/** One-tap pictures that say what the photo shows, for staff who don't write. The label goes into the ticket title. */
+const PROBLEM_KINDS: { key: string; label: string; category: PanneCategory; icon: (p: any) => JSX.Element; color: string }[] = [
+  { key: 'paint', label: 'Peinture', category: 'building', icon: IconPaintRoller, color: 'text-fuchsia-500' },
+  { key: 'electricity', label: 'Électricité', category: 'electrical', icon: IconZap, color: 'text-amber-500' },
+  { key: 'clog', label: 'Bouchage', category: 'plumbing', icon: IconPlunger, color: 'text-orange-600' },
+  { key: 'water', label: 'Eau / fuite', category: 'plumbing', icon: IconDroplet, color: 'text-sky-500' },
+  { key: 'wood', label: 'Bois', category: 'building', icon: IconDoor, color: 'text-yellow-700' },
+];
+
+/** The picture the reporter tapped, shown back on the ticket. Renders nothing for tickets without one. */
+function KindIcon({ kind, size, plain }: { kind?: string | null; size: number; plain?: boolean }) {
+  const k = PROBLEM_KINDS.find((x) => x.key === kind);
+  if (!k) return null;
+  return (
+    <span title={k.label} className="shrink-0 inline-flex">
+      <k.icon size={size} className={plain ? undefined : k.color} />
+    </span>
+  );
+}
+
 /**
  * New ticket, kept to what floor staff actually know: what's wrong, where,
  * a photo, and which team (or person) should handle it. Everything else is
@@ -748,6 +778,7 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
   const [roomId, setRoomId] = useState(''); // must be picked: a default room would silently mislabel tickets
   const [place, setPlace] = useState(areas[0] ? `area:${areas[0].id}` : buildings[0] ? `building:${buildings[0].id}` : '');
   const [photos, setPhotos] = useState<string[]>([]);
+  const [kindKey, setKindKey] = useState('');
   const [department, setDepartment] = useState<Department>('maintenance');
   const [assignedTo, setAssignedTo] = useState('');
   const [busy, setBusy] = useState(false);
@@ -780,9 +811,9 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
     setAssignedTo(''); // a person from the other team wouldn't be in the list
   }
 
-  async function addPhoto() {
+  async function addPhoto(camera: boolean) {
     try {
-      const dataUrl = await window.api.photos.pick(user.id);
+      const dataUrl = await window.api.photos.pick(user.id, camera);
       if (dataUrl) setPhotos((p) => [...p, dataUrl]);
     } catch (e: any) {
       show(e.message ?? 'Photo illisible.', 'error');
@@ -798,11 +829,14 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
     setBusy(true);
     try {
       const firstLine = text.split('\n')[0].trim();
-      const title = more.title.trim() || (!text ? 'Problème en photo' : firstLine.length > 80 ? firstLine.slice(0, 77) + '…' : firstLine);
+      const kind = PROBLEM_KINDS.find((k) => k.key === kindKey);
+      const short = firstLine.length > 80 ? firstLine.slice(0, 77) + '…' : firstLine;
+      const title = more.title.trim() || [kind?.label, short].filter(Boolean).join(' — ') || 'Problème en photo';
       const result = await window.api.pannes.create(user.id, {
         title,
         description: text || null,
-        category: more.category || 'other',
+        category: more.category || kind?.category || 'other',
+        problem_kind: kind?.key ?? null,
         priority: more.priority,
         guest_impact: more.guest_impact,
         location_type,
@@ -852,14 +886,24 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
     >
       <label className="label">1. Le problème : une photo ou un texte</label>
       {photos.length === 0 ? (
-        <button
-          type="button"
-          onClick={addPhoto}
-          className="w-full rounded-xl border-2 border-dashed border-line-strong text-ink-soft flex flex-col items-center justify-center gap-1.5 py-6 mb-2 text-sm font-bold"
-        >
-          <IconCamera size={36} />
-          Prendre une photo
-        </button>
+        <div className="flex gap-2 mb-2">
+          <button
+            type="button"
+            onClick={() => addPhoto(true)}
+            className="flex-1 rounded-xl border-2 border-dashed border-line-strong text-ink-soft flex flex-col items-center justify-center gap-1.5 py-6 text-sm font-bold"
+          >
+            <IconCamera size={36} />
+            Prendre une photo
+          </button>
+          <button
+            type="button"
+            onClick={() => addPhoto(false)}
+            className="w-24 rounded-xl border-2 border-dashed border-line-strong text-ink-soft flex flex-col items-center justify-center gap-1.5 text-xs font-semibold"
+          >
+            <IconImage size={24} />
+            Galerie
+          </button>
+        </div>
       ) : (
         <div className="flex flex-wrap gap-2 mb-2">
           {photos.map((src, i) => (
@@ -877,14 +921,35 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
           ))}
           <button
             type="button"
-            onClick={addPhoto}
+            onClick={() => addPhoto(true)}
             className="w-20 h-20 rounded-lg border-2 border-dashed border-line-strong text-ink-soft flex flex-col items-center justify-center gap-1 text-xs font-semibold"
           >
             <IconCamera size={20} />
             Photo
           </button>
+          <button
+            type="button"
+            onClick={() => addPhoto(false)}
+            className="w-20 h-20 rounded-lg border-2 border-dashed border-line-strong text-ink-soft flex flex-col items-center justify-center gap-1 text-xs font-semibold"
+          >
+            <IconImage size={20} />
+            Galerie
+          </button>
         </div>
       )}
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-2">
+        {PROBLEM_KINDS.map((k) => (
+          <button
+            key={k.key}
+            type="button"
+            onClick={() => setKindKey(kindKey === k.key ? '' : k.key)}
+            className={`rounded-xl border-2 px-1 py-2.5 flex flex-col items-center gap-1 text-xs font-bold transition-colors ${kindKey === k.key ? 'border-brand-600 bg-brand-600/10 text-brand-700 dark:text-brand-300' : 'border-line text-ink-soft'}`}
+          >
+            <k.icon size={28} className={k.color} />
+            {k.label}
+          </button>
+        ))}
+      </div>
       <textarea
         className="input mb-4 text-base"
         rows={2}

@@ -48,6 +48,18 @@ export const IconTruck = (p: IconProps) => (
 export const IconCamera = (p: IconProps) => (
   <svg {...base(p)}><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" /><circle cx="12" cy="13.5" r="3.4" /></svg>
 );
+export const IconImage = (p: IconProps) => (
+  <svg {...base(p)}><rect x="3" y="4.5" width="18" height="15" rx="2" /><circle cx="8.5" cy="9.5" r="1.6" /><path d="M21 15.5l-5-5-9 9" /></svg>
+);
+export const IconPaintRoller = (p: IconProps) => (
+  <svg {...base(p)}><rect x="3" y="3.5" width="14" height="5.5" rx="1.2" /><path d="M17 6.2h3.5v5.3h-8.5v3" /><rect x="10.4" y="14.5" width="3.2" height="6.5" rx="1" /></svg>
+);
+export const IconPlunger = (p: IconProps) => (
+  <svg {...base(p)}><path d="M12 3v10" /><path d="M6 17.5c0-2.6 2.6-4.5 6-4.5s6 1.9 6 4.5Z" /><path d="M4 21h16" /></svg>
+);
+export const IconDoor = (p: IconProps) => (
+  <svg {...base(p)}><rect x="6" y="3" width="12" height="18" rx="1" /><path d="M9 6.5h6v4.5H9z" /><circle cx="15" cy="14.5" r="0.4" fill="currentColor" /><path d="M3.5 21h17" /></svg>
+);
 export const IconWrench = (p: IconProps) => (
   <svg {...base(p)}><path d="M14.5 6.5a3.8 3.8 0 0 0 4.9 4.9l-2.2-2.2 1.4-1.4 2.2 2.2A3.8 3.8 0 0 0 15 3.9l2.2 2.2-1.4 1.4-2.2-2.2A3.8 3.8 0 0 0 14.5 6.5Z" /><path d="M13 9 4.5 17.5a2 2 0 1 0 2 2L15 11" /></svg>
 );
