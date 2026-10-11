@@ -752,6 +752,8 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
   const [assignedTo, setAssignedTo] = useState('');
   const [busy, setBusy] = useState(false);
   const simple = useSimpleMode();
+  // housekeeping gets the bare form: photo or text, where, which team
+  const quick = user.role === 'housekeeping';
 
   // optional details, with the defaults a quick report gets
   const [showMore, setShowMore] = useState(false);
@@ -789,16 +791,17 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
 
   async function submit() {
     const text = description.trim();
-    if (!text) return show("Écrivez ce qui ne marche pas.", 'error');
+    // a photo is enough: not everyone on the floor can write
+    if (!text && photos.length === 0) return show('Prenez une photo ou écrivez le problème.', 'error');
     if (where === 'room' && !roomId) return show('Choisissez la chambre.', 'error');
     if (where === 'other' && !place) return show("Choisissez l'endroit.", 'error');
     setBusy(true);
     try {
       const firstLine = text.split('\n')[0].trim();
-      const title = more.title.trim() || (firstLine.length > 80 ? firstLine.slice(0, 77) + '…' : firstLine);
+      const title = more.title.trim() || (!text ? 'Problème en photo' : firstLine.length > 80 ? firstLine.slice(0, 77) + '…' : firstLine);
       const result = await window.api.pannes.create(user.id, {
         title,
-        description: text,
+        description: text || null,
         category: more.category || 'other',
         priority: more.priority,
         guest_impact: more.guest_impact,
@@ -847,14 +850,48 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
         </div>
       }
     >
-      <label className="label">1. Qu'est-ce qui ne marche pas ?</label>
+      <label className="label">1. Le problème : une photo ou un texte</label>
+      {photos.length === 0 ? (
+        <button
+          type="button"
+          onClick={addPhoto}
+          className="w-full rounded-xl border-2 border-dashed border-line-strong text-ink-soft flex flex-col items-center justify-center gap-1.5 py-6 mb-2 text-sm font-bold"
+        >
+          <IconCamera size={36} />
+          Prendre une photo
+        </button>
+      ) : (
+        <div className="flex flex-wrap gap-2 mb-2">
+          {photos.map((src, i) => (
+            <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-line bg-surface-alt">
+              <img src={src} alt="" className="w-full h-full object-cover" />
+              <button
+                type="button"
+                aria-label="Retirer la photo"
+                onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
+                className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
+              >
+                <IconX size={13} />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={addPhoto}
+            className="w-20 h-20 rounded-lg border-2 border-dashed border-line-strong text-ink-soft flex flex-col items-center justify-center gap-1 text-xs font-semibold"
+          >
+            <IconCamera size={20} />
+            Photo
+          </button>
+        </div>
+      )}
       <textarea
         className="input mb-4 text-base"
-        rows={3}
-        autoFocus
+        rows={2}
+        autoFocus={!quick}
         value={description}
         onChange={(e) => setDescription(e.target.value)}
-        placeholder="Ex : La lampe de la salle de bain ne s'allume pas"
+        placeholder={photos.length ? 'Texte (facultatif)' : "Ou écrivez : la lampe de la salle de bain ne s'allume pas"}
       />
 
       <label className="label">2. Où ?</label>
@@ -881,32 +918,7 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
         )}
       </div>
 
-      <label className="label">3. Photo (facultatif)</label>
-      <div className="flex flex-wrap gap-2 mb-4">
-        {photos.map((src, i) => (
-          <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-line bg-surface-alt">
-            <img src={src} alt="" className="w-full h-full object-cover" />
-            <button
-              type="button"
-              aria-label="Retirer la photo"
-              onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
-              className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
-            >
-              <IconX size={13} />
-            </button>
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={addPhoto}
-          className="w-20 h-20 rounded-lg border-2 border-dashed border-line-strong text-ink-soft flex flex-col items-center justify-center gap-1 text-xs font-semibold"
-        >
-          <IconCamera size={20} />
-          Photo
-        </button>
-      </div>
-
-      <label className="label">4. Pour qui ?</label>
+      <label className="label">3. Pour qui ?</label>
       <div className="flex gap-2 mb-2">
         {(Object.keys(DEPARTMENT_LABELS) as Department[]).map((d) => (
           <button key={d} type="button" onClick={() => chooseDepartment(d)} className={choice(department === d)}>
@@ -914,15 +926,19 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
           </button>
         ))}
       </div>
-      <select className="select mb-4" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}>
-        <option value="">Toute l'équipe {department === 'it' ? 'informatique' : 'maintenance'}</option>
-        {staff.map((t: any) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-      </select>
+      {!quick && (
+        <select className="select mb-4" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}>
+          <option value="">Toute l'équipe {department === 'it' ? 'informatique' : 'maintenance'}</option>
+          {staff.map((t: any) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+        </select>
+      )}
 
-      <button type="button" onClick={() => setShowMore((v) => !v)} className="btn-ghost btn-sm !px-0 text-ink-soft">
-        <IconChevronDown size={15} className={showMore ? 'rotate-180 transition-transform' : 'transition-transform'} />
-        Plus de détails (facultatif)
-      </button>
+      {!quick && (
+        <button type="button" onClick={() => setShowMore((v) => !v)} className="btn-ghost btn-sm !px-0 text-ink-soft">
+          <IconChevronDown size={15} className={showMore ? 'rotate-180 transition-transform' : 'transition-transform'} />
+          Plus de détails (facultatif)
+        </button>
+      )}
       {showMore && (
         <div className="mt-2 pt-3 border-t border-line">
           <label className="label">Titre</label>
