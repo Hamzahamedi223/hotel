@@ -18,6 +18,7 @@ import {
   ALLOWED_TRANSITIONS,
   RESPONSE_STATUSES,
   RESPONSE_LABELS,
+  PROBLEM_KIND_LABELS,
   hasPermission,
   canSetStatus,
 } from '../../shared/types';
@@ -747,11 +748,11 @@ function PartForm({ panneId, parts, onClose, onSaved, show }: any) {
 
 /** One-tap pictures that say what the photo shows, for staff who don't write. The label goes into the ticket title. */
 const PROBLEM_KINDS: { key: string; label: string; category: PanneCategory; icon: (p: any) => JSX.Element; color: string }[] = [
-  { key: 'paint', label: 'Peinture', category: 'building', icon: IconPaintRoller, color: 'text-fuchsia-500' },
-  { key: 'electricity', label: 'Électricité', category: 'electrical', icon: IconZap, color: 'text-amber-500' },
-  { key: 'clog', label: 'Bouchage', category: 'plumbing', icon: IconPlunger, color: 'text-orange-600' },
-  { key: 'water', label: 'Eau / fuite', category: 'plumbing', icon: IconDroplet, color: 'text-sky-500' },
-  { key: 'wood', label: 'Bois', category: 'building', icon: IconDoor, color: 'text-yellow-700' },
+  { key: 'paint', label: PROBLEM_KIND_LABELS.paint, category: 'building', icon: IconPaintRoller, color: 'text-fuchsia-500' },
+  { key: 'electricity', label: PROBLEM_KIND_LABELS.electricity, category: 'electrical', icon: IconZap, color: 'text-amber-500' },
+  { key: 'clog', label: PROBLEM_KIND_LABELS.clog, category: 'plumbing', icon: IconPlunger, color: 'text-orange-600' },
+  { key: 'water', label: PROBLEM_KIND_LABELS.water, category: 'plumbing', icon: IconDroplet, color: 'text-sky-500' },
+  { key: 'wood', label: PROBLEM_KIND_LABELS.wood, category: 'building', icon: IconDoor, color: 'text-yellow-700' },
 ];
 
 /** The picture the reporter tapped, shown back on the ticket. Renders nothing for tickets without one. */
@@ -822,8 +823,9 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
 
   async function submit() {
     const text = description.trim();
-    // a photo is enough: not everyone on the floor can write
-    if (!text && photos.length === 0) return show('Prenez une photo ou écrivez le problème.', 'error');
+    // all three go into the WhatsApp alert the team receives
+    if (photos.length === 0) return show('Prenez une photo du problème.', 'error');
+    if (!text) return show('Décrivez le problème en quelques mots.', 'error');
     if (where === 'room' && !roomId) return show('Choisissez la chambre.', 'error');
     if (where === 'other' && !place) return show("Choisissez l'endroit.", 'error');
     setBusy(true);
@@ -831,10 +833,12 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
       const firstLine = text.split('\n')[0].trim();
       const kind = PROBLEM_KINDS.find((k) => k.key === kindKey);
       const short = firstLine.length > 80 ? firstLine.slice(0, 77) + '…' : firstLine;
-      const title = more.title.trim() || [kind?.label, short].filter(Boolean).join(' — ') || 'Problème en photo';
+      const title = more.title.trim() || [kind?.label, short].filter(Boolean).join(' — ');
+      const [firstPhoto, ...otherPhotos] = photos;
       const result = await window.api.pannes.create(user.id, {
         title,
-        description: text || null,
+        description: text,
+        photo: firstPhoto,
         category: more.category || kind?.category || 'other',
         problem_kind: kind?.key ?? null,
         priority: more.priority,
@@ -852,7 +856,7 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
       const id = result.panne.id;
       // the ticket exists now; a failed photo shouldn't lose it
       let failed = 0;
-      for (const file_path of photos) {
+      for (const file_path of otherPhotos) {
         try {
           await window.api.pannes.addPhoto(user.id, { panne_id: id, file_path, stage: 'before' });
         } catch {
@@ -884,7 +888,7 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
         </div>
       }
     >
-      <label className="label">1. Le problème : une photo ou un texte</label>
+      <label className="label">1. Le problème : photo et description (obligatoires)</label>
       {photos.length === 0 ? (
         <div className="flex gap-2 mb-2">
           <button
@@ -956,7 +960,7 @@ function NewPanneForm({ onClose, onSaved, show }: any) {
         autoFocus={!quick}
         value={description}
         onChange={(e) => setDescription(e.target.value)}
-        placeholder={photos.length ? 'Texte (facultatif)' : "Ou écrivez : la lampe de la salle de bain ne s'allume pas"}
+        placeholder="Décrivez : la peinture s'écaille près de la fenêtre"
       />
 
       <label className="label">2. Où ?</label>

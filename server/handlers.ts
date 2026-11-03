@@ -3,7 +3,8 @@ import { all, get, run, transaction } from './db.js';
 import { exportAll, restoreAll } from './backup.js';
 import { storePhoto, archiveDownloadUrl } from './photos.js';
 import { runArchive, eligibleCount, ARCHIVE_AFTER_DAYS } from './archive.js';
-import { hasPermission, PERMISSIONS, OPEN_PANNE_STATUSES, USER_ROLES, canSetStatus, canViewPanne } from '../shared/types.js';
+import { notifyNewPanne, notifyAssigned, notifyNewPhoto, gatewayStatus } from './whatsapp.js';
+import { hasPermission, PERMISSIONS, OPEN_PANNE_STATUSES, USER_ROLES, TRADE_LABELS, canSetStatus, canViewPanne, normalizePhone } from '../shared/types.js';
 import type { UserRole, PanneStatus } from '../shared/types.js';
 import {
   audit,
@@ -101,16 +102,18 @@ export function registerHandlers() {
     return { id: user.id, username: user.username, full_name: user.full_name, role: user.role };
   });
 
-  ipcMain.handle('users:list', async () => await all('SELECT id, username, full_name, role, active FROM users ORDER BY full_name'));
+  ipcMain.handle('users:list', async () => await all('SELECT id, username, full_name, role, active, phone, trade FROM users ORDER BY full_name'));
   ipcMain.handle('users:technicians', async () => await all("SELECT id, username, full_name, role FROM users WHERE role IN ('technician','it') AND active = 1 ORDER BY full_name"));
 
   ipcMain.handle('users:create', async (_e, actorId: number, input: any) => {
     await requireRole(actorId, 'user.manage');
+    const phone = normalizePhone(input?.phone);
+    const trade = validTrade(input?.trade);
     const hash = bcrypt.hashSync(input.password, 10);
-    const { lastInsertRowid } = await run('INSERT INTO users (username, password_hash, full_name, role) VALUES (?,?,?,?)', [
-      input.username, hash, input.full_name, input.role,
+    const { lastInsertRowid } = await run('INSERT INTO users (username, password_hash, full_name, role, phone, trade) VALUES (?,?,?,?,?,?)', [
+      input.username, hash, input.full_name, input.role, phone, trade,
     ]);
-    await audit(actorId, 'user.create', 'user', lastInsertRowid, { username: input.username, role: input.role });
+    await audit(actorId, 'user.create', 'user', lastInsertRowid, { username: input.username, role: input.role, phone, trade });
     return { id: lastInsertRowid };
   });
   ipcMain.handle('users:update', async (_e, actorId: number, userId: number, input: any) => {
@@ -121,14 +124,21 @@ export function registerHandlers() {
     if (!username || !full_name) throw new Error('Nom et identifiant sont requis.');
     if (!USER_ROLES.includes(role)) throw new Error('Rôle invalide.');
     if (actorId === userId && role !== 'admin') throw new Error('Vous ne pouvez pas retirer votre propre rôle administrateur.');
-    const before = await get<any>('SELECT username, full_name, role FROM users WHERE id = ?', [userId]);
+    const phone = normalizePhone(input?.phone);
+    const trade = validTrade(input?.trade);
+    const before = await get<any>('SELECT username, full_name, role, phone, trade FROM users WHERE id = ?', [userId]);
     if (!before) throw new Error('Utilisateur introuvable.');
     if (await get('SELECT id FROM users WHERE username = ? AND id <> ?', [username, userId])) {
       throw new Error(`L'identifiant « ${username} » est déjà utilisé.`);
     }
-    await run('UPDATE users SET username = ?, full_name = ?, role = ? WHERE id = ?', [username, full_name, role, userId]);
-    await audit(actorId, 'user.update', 'user', userId, { before, after: { username, full_name, role } });
+    await run('UPDATE users SET username = ?, full_name = ?, role = ?, phone = ?, trade = ? WHERE id = ?', [username, full_name, role, phone, trade, userId]);
+    await audit(actorId, 'user.update', 'user', userId, { before, after: { username, full_name, role, phone, trade } });
   });
+  function validTrade(t: unknown): string | null {
+    if (!t) return null;
+    if (typeof t !== 'string' || !(t in TRADE_LABELS)) throw new Error('Métier invalide.');
+    return t;
+  }
   ipcMain.handle('users:setActive', async (_e, actorId: number, userId: number, active: boolean) => {
     await requireRole(actorId, 'user.manage');
     if (actorId === userId && !active) throw new Error('Vous ne pouvez pas désactiver votre propre compte.');
@@ -373,13 +383,26 @@ export function registerHandlers() {
     await visiblePanne(await actorOf(ctx.actorId), id);
     return await panneDetail(id);
   });
-  ipcMain.handle('pannes:create', async (_e, actorId: number, input: PanneInput) => {
+  /** `photo` is the first photo (data URL), required with the description and the place: the WhatsApp alert is that photo with them as its caption. */
+  ipcMain.handle('pannes:create', async (_e, actorId: number, input: PanneInput & { photo?: string }) => {
     await requireRole(actorId, 'panne.create');
-    return createPanne({ ...input, user_id: actorId });
+    const { photo, ...rest } = input ?? ({} as any);
+    const description = String(rest.description ?? '').trim();
+    if (!photo) throw new Error('Ajoutez une photo du problème.');
+    if (!description) throw new Error('Décrivez le problème.');
+    if (rest.location_type === 'room' ? !rest.room_id : !(rest.area_id || rest.building_id)) throw new Error("Choisissez l'endroit.");
+    const file_path = await storePhoto(photo);
+    const created = await createPanne({ ...rest, description, user_id: actorId });
+    const result = await addPannePhoto({ panne_id: created.panne.id, file_path, stage: 'before', user_id: actorId });
+    await notifyNewPanne(result.panne, file_path, actorId);
+    return result;
   });
   ipcMain.handle('pannes:assign', async (_e, actorId: number, id: number, input: any) => {
     await requireRole(actorId, 'panne.assign');
-    return assignPanne(id, input, actorId);
+    const before = await get<{ assigned_to: number | null }>('SELECT assigned_to FROM pannes WHERE id = ?', [id]);
+    const result = await assignPanne(id, input, actorId);
+    await notifyAssigned(result.panne, before?.assigned_to ?? null, actorId);
+    return result;
   });
   ipcMain.handle('pannes:setStatus', async (_e, actorId: number, id: number, next: PanneStatus, notes?: string) => {
     const { actor, panne } = await requirePanne(actorId, 'panne.comment', id);
@@ -426,7 +449,9 @@ export function registerHandlers() {
   ipcMain.handle('pannes:addPhoto', async (_e, actorId: number, input: any) => {
     await requirePanne(actorId, 'panne.comment', input?.panne_id);
     const file_path = await storePhoto(input.file_path);
-    return addPannePhoto({ ...input, file_path, user_id: actorId });
+    const result = await addPannePhoto({ ...input, file_path, user_id: actorId });
+    await notifyNewPhoto(result.panne, file_path, actorId);
+    return result;
   });
 
   /* ---------- ARCHIVES ---------- */
@@ -565,6 +590,17 @@ export function registerHandlers() {
 
   /* ---------- SETTINGS / BACKUP ---------- */
   ipcMain.handle('settings:get', async () => await settingsMap());
+  /** The linked WhatsApp number (Réglages): status, QR code to scan, queue. */
+  ipcMain.handle('whatsapp:status', async (ctx) => {
+    await requireRole(ctx.actorId!, 'settings.manage');
+    return gatewayStatus();
+  });
+  /** Unlinks the number; the gateway then shows a new QR code to link another one. */
+  ipcMain.handle('whatsapp:logout', async (ctx) => {
+    await requireRole(ctx.actorId!, 'settings.manage');
+    await run("UPDATE whatsapp_gateway SET command = 'logout' WHERE id = 1");
+    await audit(ctx.actorId, 'whatsapp.logout', null, null);
+  });
 
   /* ---------- LIVE REFRESH ---------- */
   ipcMain.handle('sync:version', async () => (await get<{ version: number }>('SELECT version FROM app_state WHERE id = 1'))?.version ?? 0);

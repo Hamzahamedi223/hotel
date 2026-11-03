@@ -2,6 +2,7 @@ import { ensureReady, get } from './db.js';
 import { initDatabase } from './seed.js';
 import { handlers, registerHandlers } from './handlers.js';
 import { issueToken, verifyToken } from './auth.js';
+import { gatewayHandlers, isGatewaySecret } from './whatsapp.js';
 
 registerHandlers();
 
@@ -32,6 +33,12 @@ export class RpcError extends Error {
 /** Runs one API call. Throws RpcError for auth problems; other errors are user-facing messages. */
 export async function dispatch(method: string, args: unknown, token: string | null): Promise<any> {
   await ensureReady(initDatabase);
+  // the WhatsApp gateway process, authenticated with its shared secret instead of a user session
+  if (method.startsWith('gateway:')) {
+    if (!isGatewaySecret(token)) throw new RpcError('Passerelle non autorisée.', 401);
+    if (!gatewayHandlers[method] || !Array.isArray(args)) throw new RpcError('Requête invalide.', 400);
+    return gatewayHandlers[method](...args);
+  }
   const handler = handlers[method];
   if (!handler || !Array.isArray(args)) throw new RpcError('Requête invalide.', 400);
 

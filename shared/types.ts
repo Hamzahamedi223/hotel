@@ -31,6 +31,44 @@ export interface User {
   full_name: string;
   role: UserRole;
   active: number;
+  /** WhatsApp number in international format (+21694694875); null = no WhatsApp alerts. */
+  phone: string | null;
+  trade: Trade | null;
+}
+
+/** A technician's métier: new tickets of that kind are sent to them on WhatsApp. No trade = polyvalent. */
+export type Trade = 'paint' | 'electrical' | 'plumbing' | 'carpentry' | 'hvac';
+
+export const TRADE_LABELS: Record<Trade, string> = {
+  paint: 'Peintre',
+  electrical: 'Électricien',
+  plumbing: 'Plombier',
+  carpentry: 'Menuisier',
+  hvac: 'Frigoriste (climatisation, chauffage)',
+};
+
+/** The one-tap problem pictures on the report form (icons live in PannesPage). */
+export const PROBLEM_KIND_LABELS: Record<string, string> = {
+  paint: 'Peinture',
+  electricity: 'Électricité',
+  clog: 'Bouchage',
+  water: 'Eau / fuite',
+  wood: 'Bois',
+};
+
+/** The trade a ticket needs: from the picture the reporter tapped, else from its category. */
+export function tradeForPanne(panne: { problem_kind?: string | null; category: string }): Trade | null {
+  const byKind: Record<string, Trade> = { paint: 'paint', electricity: 'electrical', clog: 'plumbing', water: 'plumbing', wood: 'carpentry' };
+  const byCategory: Record<string, Trade> = { electrical: 'electrical', plumbing: 'plumbing', ac: 'hvac', heating: 'hvac' };
+  return (panne.problem_kind && byKind[panne.problem_kind]) || byCategory[panne.category] || null;
+}
+
+/** Normalizes a phone number to +<digits>, or throws a readable error. Empty → null. */
+export function normalizePhone(raw: unknown): string | null {
+  const s = String(raw ?? '').replace(/[\s().-]/g, '').replace(/^00/, '+');
+  if (!s) return null;
+  if (!/^\+\d{8,15}$/.test(s)) throw new Error('Numéro WhatsApp invalide : format international, ex. +216 94 694 875.');
+  return s;
 }
 
 export interface Building {

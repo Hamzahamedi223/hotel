@@ -77,6 +77,8 @@ export default function SettingsPage() {
           </div>
         </Panel>
 
+        <WhatsAppPanel show={show} />
+
         <Panel title="Sauvegarde & restauration">
           <p className="text-sm text-ink-soft mb-3">
             Les données sont en ligne et partagées par tous les appareils. Téléchargez régulièrement une sauvegarde (fichier .json) et gardez-la en lieu sûr.
@@ -113,5 +115,71 @@ function SettingRow({ label, value, onSave }: { label: string; value: string; on
       <label className="label">{label}</label>
       <input className="input" value={v} onChange={(e) => setV(e.target.value)} onBlur={() => v !== value && onSave(v)} />
     </div>
+  );
+}
+
+/**
+ * The number the WhatsApp alerts are sent from: its state as the gateway last
+ * reported it, and the QR code to scan while none is linked. Refreshed every
+ * few seconds while open, because the QR code changes every ~20 s.
+ */
+function WhatsAppPanel({ show }: { show: (msg: string, kind?: any) => void }) {
+  const [wa, setWa] = useState<any | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => window.api.whatsapp.status().then((s: any) => alive && setWa(s)).catch(() => {});
+    load();
+    const t = setInterval(load, 4000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+  if (!wa?.enabled) return null;
+
+  async function unlink() {
+    if (!confirm('Délier ce numéro ? Les alertes ne partiront plus jusqu’à ce qu’un numéro soit scanné.')) return;
+    try {
+      await window.api.whatsapp.logout();
+      show('Demande envoyée : un nouveau QR code va apparaître.', 'success');
+    } catch (e: any) {
+      show(e.message, 'error');
+    }
+  }
+
+  return (
+    <Panel title="WhatsApp des alertes">
+      {wa.status === 'open' && (
+        <>
+          <p className="text-sm mb-3">
+            <span className="badge-success">Connecté</span> Les alertes partent du <b className="font-mono">{wa.phone}</b>.
+          </p>
+          <button onClick={unlink} disabled={wa.logout_pending} className="btn-secondary btn-sm">
+            {wa.logout_pending ? 'Changement en cours…' : 'Changer de numéro'}
+          </button>
+        </>
+      )}
+      {wa.status === 'qr' && wa.qr_image && (
+        <div className="text-center">
+          <p className="text-sm text-ink-soft mb-2">
+            Sur le téléphone de l’hôtel : WhatsApp → <b>Appareils connectés</b> → <b>Connecter un appareil</b>, puis scannez :
+          </p>
+          <img src={wa.qr_image} alt="QR code WhatsApp" className="mx-auto w-56 h-56 rounded-lg bg-white p-2" />
+        </div>
+      )}
+      {wa.status === 'connecting' && <p className="text-sm text-ink-soft">Connexion à WhatsApp…</p>}
+      {wa.status === 'offline' && (
+        <p className="text-sm text-ink-soft">
+          <span className="badge-neutral">Hors ligne</span> La passerelle WhatsApp ne répond pas. Les alertes attendent et partiront dès
+          qu’elle redémarre.
+        </p>
+      )}
+      {(wa.pending > 0 || wa.failed > 0) && (
+        <p className="text-xs text-ink-soft mt-3">
+          {wa.pending > 0 && <>{wa.pending} message(s) en attente. </>}
+          {wa.failed > 0 && <>{wa.failed} échec(s) cette semaine (voir le Journal).</>}
+        </p>
+      )}
+    </Panel>
   );
 }

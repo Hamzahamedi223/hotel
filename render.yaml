@@ -1,0 +1,21 @@
+# The WhatsApp gateway (server/whatsappGateway.ts) on Render's free plan.
+# Render → New → Blueprint → this repository. The app itself stays on Vercel.
+services:
+  - type: web
+    name: hotel-whatsapp
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci --include=dev
+    startCommand: npm run whatsapp
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      # the app's public address
+      - key: APP_URL
+        value: https://hotel-teal-mu.vercel.app
+      # the same value as WHATSAPP_GATEWAY_SECRET on Vercel
+      - key: WHATSAPP_GATEWAY_SECRET
+        sync: false

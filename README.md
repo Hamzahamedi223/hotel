@@ -86,6 +86,58 @@ Re-run `npx vercel --prod` after any code change.
    - **Android (Chrome)**: menu ⋮ → *Ajouter à l'écran d'accueil* / *Installer l'application*.
    - **iPhone (Safari)**: Partager → *Sur l'écran d'accueil*.
 
+### WhatsApp alerts
+
+Each user can have a WhatsApp number (*Utilisateurs* → international format,
+e.g. `+216 94 694 875`), and technicians a **métier** (peintre, électricien,
+plombier, menuisier, frigoriste). When a ticket is created:
+
+- if it is assigned to someone, that person gets the message;
+- otherwise the team's members whose métier matches the problem get it
+  (Peinture → peintres, Électricité → électriciens, Bouchage/Eau → plombiers,
+  Bois → menuisiers, Climatisation/Chauffage → frigoristes). If nobody has that
+  métier, the whole team (maintenance or IT) gets it.
+
+A report needs a photo, a short description and the room (or place). The alert
+is one WhatsApp message, that photo with a short caption:
+
+```
+🎨 *Peinture — Chambre 101*
+La peinture s'écaille près de la fenêtre
+Housekeeping · PANNE-20261102-0012
+```
+
+Extra photos follow as separate images. Assigning a ticket to someone later also sends them a message. Each send is
+recorded in the *Journal* (`whatsapp.sent` / `whatsapp.failed`).
+
+**Free option — send from the hotel's own number** (`WHATSAPP_PROVIDER=web`):
+every alert comes from one ordinary WhatsApp number, linked like WhatsApp Web.
+The app queues the messages in the database (`whatsapp_outbox`); a small
+gateway process (`server/whatsappGateway.ts`) pulls them, sends them and
+acknowledges them. It also keeps the WhatsApp session in the database, so a
+restart never needs a new scan. Nothing is lost while it is asleep or down.
+
+- **App** (Vercel, or `.env` locally): `WHATSAPP_PROVIDER=web`,
+  `WHATSAPP_GATEWAY_SECRET` (any long random text), `WHATSAPP_GATEWAY_URL`
+  (the gateway's address, pinged to wake it up).
+- **Gateway**: `APP_URL` (the app's address) and the same `WHATSAPP_GATEWAY_SECRET`.
+  Locally: `npm run whatsapp` next to `npm run dev`. Online: Render's free plan
+  (`render.yaml`: Render → New → Blueprint → this repository). It keeps itself
+  awake, and the app wakes it whenever a message is queued.
+- **Link the number**: as admin, *Réglages* → *WhatsApp des alertes* shows the
+  QR code. On the hotel phone: WhatsApp → *Appareils connectés* → *Connecter un
+  appareil*. *Changer de numéro* unlinks it.
+
+It is not an official WhatsApp API: use a dedicated SIM rather than a personal
+number, since WhatsApp can ban numbers it sees as automated.
+
+Paid, official alternatives: set `WHATSAPP_PROVIDER` to `twilio` or `meta` plus
+that provider's keys (see `.env.example`). Without a provider, messages are only
+printed in the server console.
+WhatsApp only accepts free text within 24 h of the recipient writing to your
+number; for production, create an approved template with one variable `{{1}}`
+and set `TWILIO_CONTENT_SID` or `WHATSAPP_TEMPLATE`.
+
 ### Moving data from the old desktop version
 
 ```bash

@@ -4,20 +4,25 @@ import Modal from '../components/Modal';
 import { useToast, ToastHost } from '../components/Toast';
 import { IconPlus } from '../components/icons';
 import { useLiveTick } from '../lib/live';
-import { ROLE_LABELS } from '../../shared/types';
+import { ROLE_LABELS, TRADE_LABELS } from '../../shared/types';
 
 const ROLES = Object.entries(ROLE_LABELS);
+const TRADES = Object.entries(TRADE_LABELS);
+const EMPTY_FORM = { username: '', password: '', full_name: '', role: 'technician', phone: '', trade: '' };
+
+/** Only maintenance technicians have a métier; other roles never send one. */
+const withTrade = <T extends { role: string; trade: string }>(f: T): T => ({ ...f, trade: f.role === 'technician' ? f.trade : '' });
 
 export default function UsersPage() {
   const tick = useLiveTick();
   const me = useAuthStore((s) => s.user)!;
   const [rows, setRows] = useState<any[]>([]);
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ username: '', password: '', full_name: '', role: 'technician' });
+  const [form, setForm] = useState(EMPTY_FORM);
   const [resetFor, setResetFor] = useState<any | null>(null);
   const [newPw, setNewPw] = useState('');
   const [editFor, setEditFor] = useState<any | null>(null);
-  const [editForm, setEditForm] = useState({ username: '', full_name: '', role: 'technician' });
+  const [editForm, setEditForm] = useState({ username: '', full_name: '', role: 'technician', phone: '', trade: '' });
   const { toast, show } = useToast();
 
   const load = () => window.api.users.list().then(setRows);
@@ -29,9 +34,9 @@ export default function UsersPage() {
   async function create() {
     if (!form.username || !form.password || !form.full_name) return show('Tous les champs sont requis.', 'error');
     try {
-      await window.api.users.create(me.id, form);
+      await window.api.users.create(me.id, withTrade(form));
       setShowNew(false);
-      setForm({ username: '', password: '', full_name: '', role: 'technician' });
+      setForm(EMPTY_FORM);
       load();
       show('Utilisateur créé.', 'success');
     } catch (e: any) {
@@ -40,7 +45,7 @@ export default function UsersPage() {
   }
 
   async function saveEdit() {
-    const input = { username: editForm.username.trim(), full_name: editForm.full_name.trim(), role: editForm.role };
+    const input = withTrade({ ...editForm, username: editForm.username.trim(), full_name: editForm.full_name.trim() });
     if (!input.username || !input.full_name) return show('Nom et identifiant sont requis.', 'error');
     try {
       await window.api.users.update(me.id, editFor.id, input);
@@ -69,6 +74,7 @@ export default function UsersPage() {
               <th>Nom</th>
               <th>Identifiant</th>
               <th>Rôle</th>
+              <th>WhatsApp</th>
               <th>Statut</th>
               <th></th>
             </tr>
@@ -78,13 +84,17 @@ export default function UsersPage() {
               <tr key={u.id}>
                 <td className="font-medium">{u.full_name}</td>
                 <td className="font-mono text-xs">{u.username}</td>
-                <td>{ROLES.find((r) => r[0] === u.role)?.[1] ?? u.role}</td>
+                <td>
+                  {ROLES.find((r) => r[0] === u.role)?.[1] ?? u.role}
+                  {u.trade && <div className="text-xs text-slate-500">{TRADE_LABELS[u.trade as keyof typeof TRADE_LABELS] ?? u.trade}</div>}
+                </td>
+                <td className="font-mono text-xs whitespace-nowrap">{u.phone ?? '—'}</td>
                 <td>{u.active ? <span className="badge-success">Actif</span> : <span className="badge-neutral">Désactivé</span>}</td>
                 <td className="text-right whitespace-nowrap">
                   <button
                     onClick={() => {
                       setEditFor(u);
-                      setEditForm({ username: u.username, full_name: u.full_name, role: u.role });
+                      setEditForm({ username: u.username, full_name: u.full_name, role: u.role, phone: u.phone ?? '', trade: u.trade ?? '' });
                     }}
                     className="btn-ghost btn-xs"
                   >
@@ -144,6 +154,7 @@ export default function UsersPage() {
               </option>
             ))}
           </select>
+          <ContactFields form={form} onChange={(patch) => setForm({ ...form, ...patch })} />
         </Modal>
       )}
 
@@ -183,6 +194,7 @@ export default function UsersPage() {
           {editFor.id === me.id && (
             <p className="text-xs text-slate-500 mt-1">Vous ne pouvez pas changer votre propre rôle.</p>
           )}
+          <ContactFields form={editForm} onChange={(patch) => setEditForm({ ...editForm, ...patch })} />
         </Modal>
       )}
 
@@ -214,5 +226,37 @@ export default function UsersPage() {
       )}
       <ToastHost toast={toast} />
     </div>
+  );
+}
+
+/** WhatsApp number, and the métier for technicians: new tickets of that kind are sent to them. */
+function ContactFields({ form, onChange }: { form: { role: string; phone: string; trade: string }; onChange: (patch: { phone?: string; trade?: string }) => void }) {
+  return (
+    <>
+      <label className="label mt-3">Téléphone WhatsApp</label>
+      <input
+        type="tel"
+        inputMode="tel"
+        className="input"
+        placeholder="+216 94 694 875"
+        value={form.phone}
+        onChange={(e) => onChange({ phone: e.target.value })}
+      />
+      <p className="text-xs text-slate-500 mt-1">Format international. Laisser vide : pas de message WhatsApp.</p>
+      {form.role === 'technician' && (
+        <>
+          <label className="label mt-3">Métier</label>
+          <select className="select" value={form.trade} onChange={(e) => onChange({ trade: e.target.value })}>
+            <option value="">Polyvalent</option>
+            {TRADES.map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-slate-500 mt-1">Reçoit sur WhatsApp les nouveaux tickets de son métier.</p>
+        </>
+      )}
+    </>
   );
 }

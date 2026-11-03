@@ -9,16 +9,20 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "whatsapp": "tsx server/whatsappGateway.ts",
     "seed": "tsx server/seed.ts",
     "seed:demo": "tsx server/seed.ts --demo",
     "import:sqlite": "tsx server/importSqlite.ts",
     "test": "vitest run"
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc14",
     "bcryptjs": "^2.4.3",
     "jpeg-js": "^0.4.4",
     "pdfkit": "^0.20.2",
     "pg": "^8.23.1",
+    "pino": "10.4.0",
+    "qrcode": "1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^4.5.5"
@@ -29,6 +33,7 @@
     "@types/node": "^22.5.5",
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.23.1",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@types/sql.js": "^1.4.11",

@@ -8,7 +8,7 @@ interface HotelApi {
     list(): Promise<any[]>;
     technicians(): Promise<any[]>;
     create(actorId: number, input: any): Promise<{ id: number }>;
-    update(actorId: number, userId: number, input: { username: string; full_name: string; role: string }): Promise<void>;
+    update(actorId: number, userId: number, input: { username: string; full_name: string; role: string; phone?: string; trade?: string }): Promise<void>;
     setActive(actorId: number, userId: number, active: boolean): Promise<void>;
     resetPassword(actorId: number, userId: number, pw: string): Promise<void>;
   };
@@ -106,6 +106,7 @@ interface HotelApi {
   };
   sync: { version(): Promise<number> };
   settings: { get(): Promise<Record<string, string>>; set(actorId: number, key: string, value: string): Promise<void> };
+  whatsapp: { status(): Promise<any>; logout(): Promise<void> };
   /** create downloads a JSON file; restore asks for one (false if the user cancelled). */
   backup: { create(actorId: number): Promise<{ path: string }>; restore(actorId: number): Promise<boolean> };
   /** Opens the gallery, or the camera when `camera` is set; resolves to a resized image as a data URL. */
